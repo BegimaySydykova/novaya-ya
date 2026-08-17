@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6efe7">
+  <title>365 дней · Наш челлендж</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">🌱 365 дней</div>
+        <h1>Наш челлендж</h1>
+      </div>
+      <button id="profileBtn" class="profile-pill"></button>
+    </header>
+
+    <main>
+      <section id="view-today" class="view active"></section>
+      <section id="view-calendar" class="view"></section>
+      <section id="view-progress" class="view"></section>
+      <section id="view-rewards" class="view"></section>
+      <section id="view-us" class="view"></section>
+    </main>
+
+    <nav class="bottom-nav">
+      <button data-view="today" class="nav-item active"><span>☀️</span>Сегодня</button>
+      <button data-view="calendar" class="nav-item"><span>📅</span>Календарь</button>
+      <button data-view="progress" class="nav-item"><span>📊</span>Прогресс</button>
+      <button data-view="rewards" class="nav-item"><span>🏆</span>Награды</button>
+      <button data-view="us" class="nav-item"><span>👯‍♀️</span>Мы</button>
+    </nav>
+  </div>
+
+  <div id="modal" class="modal hidden">
+    <div class="modal-card">
+      <button id="modalClose" class="modal-close">×</button>
+      <div id="modalContent"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -159,6 +159,27 @@ function escapeHtml(value) {
     .replace(/'/g, "&#039;");
 }
 
+/*
+  Нормализуем дату.
+  В базе должна храниться строка YYYY-MM-DD.
+  Никаких автоматических "20" здесь больше нет.
+*/
+function normalizeStartDate(value) {
+  if (!value) return null;
+
+  const str = String(value).trim();
+
+  const match = str.match(
+    /^(\d{4})-(\d{2})-(\d{2})/
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  return `${match[1]}-${match[2]}-${match[3]}`;
+}
+
 /* =========================================================
    AUTH
 ========================================================= */
@@ -184,11 +205,14 @@ async function init() {
     await loadAllData();
 
     /*
-      Ищем профиль именно по auth_user_id.
+      Ищем профиль именно текущего авторизованного аккаунта.
+      Никаких предположений по имени или порядку пользователей.
     */
 
     const profile = Object.values(profiles).find(
-      p => p.auth_user_id === currentAuthUserId
+      p =>
+        String(p.auth_user_id || "").trim() ===
+        String(currentAuthUserId).trim()
     );
 
     if (!profile) {
@@ -221,7 +245,20 @@ async function init() {
       return;
     }
 
+    /*
+      activeUserId всегда равен реальному
+      profiles.id текущего пользователя.
+    */
+
     activeUserId = profile.id;
+
+    /*
+      Дополнительно синхронизируем локальное значение
+      start_date непосредственно из профиля.
+    */
+
+    users[activeUserId].startDate =
+      normalizeStartDate(profile.start_date);
 
     render();
 
@@ -369,7 +406,9 @@ async function login() {
     await loadAllData();
 
     const profile = Object.values(profiles).find(
-      p => p.auth_user_id === currentAuthUserId
+      p =>
+        String(p.auth_user_id || "").trim() ===
+        String(currentAuthUserId).trim()
     );
 
     if (!profile) {
@@ -381,6 +420,9 @@ async function login() {
     }
 
     activeUserId = profile.id;
+
+    users[activeUserId].startDate =
+      normalizeStartDate(profile.start_date);
 
     render();
 
@@ -415,9 +457,7 @@ sb.auth.onAuthStateChange(
 ========================================================= */
 
 function emptyUser(profile) {
-
   return {
-
     id: profile.id,
 
     name:
@@ -426,15 +466,14 @@ function emptyUser(profile) {
 
     /*
       ВАЖНО:
-      дата берётся именно из profiles.start_date.
-      Приводим её к формату YYYY-MM-DD,
-      чтобы расчёт дней всегда был корректным.
+      дата берётся только из profiles.start_date.
+      Никакой даты по умолчанию здесь нет.
     */
 
     startDate:
-      profile.start_date
-        ? String(profile.start_date).slice(0, 10)
-        : null,
+      normalizeStartDate(
+        profile.start_date
+      ),
 
     authUserId:
       profile.auth_user_id ||
@@ -467,7 +506,9 @@ async function loadAllData() {
 
   /*
     СНАЧАЛА загружаем profiles.
-    Настоящая дата старта хранится здесь.
+
+    start_date является настоящим источником даты старта.
+    Мы НЕ создаём дату самостоятельно.
   */
 
   const profilesResult = await sb
@@ -486,15 +527,11 @@ async function loadAllData() {
     profiles[row.id] = row;
   }
 
-  /*
-    Создаём пользователей непосредственно
-    из строк profiles.
-  */
-
   users = {};
 
   for (const profile of profilesResult.data || []) {
-    users[profile.id] = emptyUser(profile);
+    users[profile.id] =
+      emptyUser(profile);
   }
 
   const ids = Object.keys(users);
@@ -1564,144 +1601,215 @@ async function toggleGoal(
    START DATE
 ========================================================= */
 
+/*
+  НОВАЯ ВЕРСИЯ.
+
+  Дата старта НЕ создаётся автоматически.
+  Дата берётся из input.
+  Сохраняется непосредственно в profiles.start_date.
+  После UPDATE мы получаем реальную строку из Supabase.
+  Именно её записываем в локальное состояние.
+
+  Поэтому после перезагрузки:
+      profiles.start_date
+          ↓
+      users[id].startDate
+          ↓
+      dayNum()
+          ↓
+      весь трекер
+
+  Никакого "20 числа" в JavaScript нет.
+*/
+
 async function changeStart() {
 
-  const input =
-    document.getElementById(
-      "startDate"
-    );
+  if (!activeUserId) {
+    toast("Пользователь не выбран");
+    return;
+  }
 
-  if (!input) return;
+  const input =
+    document.getElementById("startDate");
+
+  if (!input) {
+    toast("Поле даты не найдено");
+    return;
+  }
 
   const value =
-    input.value;
+    normalizeStartDate(input.value);
 
   if (!value) {
-
-    toast(
-      "Выбери дату"
-    );
-
+    toast("Выбери дату");
     return;
   }
 
-  if (!activeUserId) {
+  /*
+    Сохраняем именно в profiles.
+    Используем profiles.id текущего пользователя.
+  */
 
-    toast(
-      "Пользователь не выбран"
-    );
+  const {
+    data,
+    error
+  } = await sb
+    .from("profiles")
+    .update({
+      start_date: value
+    })
+    .eq(
+      "id",
+      activeUserId
+    )
+    .select("*")
+    .single();
 
-    return;
-  }
-
-  try {
-
-    /*
-      Сохраняем дату непосредственно
-      в profiles.start_date.
-
-      select() нужен для того, чтобы убедиться,
-      что Supabase действительно вернул
-      обновлённую строку.
-    */
-
-    const {
-      data,
-      error
-    } = await sb
-      .from("profiles")
-      .update({
-        start_date: value
-      })
-      .eq(
-        "id",
-        activeUserId
-      )
-      .select("*")
-      .single();
-
-    if (error) {
-
-      console.error(
-        "Ошибка profiles.update:",
-        error
-      );
-
-      toast(
-        "Не удалось сохранить дату"
-      );
-
-      return;
-    }
-
-    if (!data) {
-
-      console.error(
-        "Supabase не вернул профиль после обновления"
-      );
-
-      toast(
-        "Дата не сохранилась"
-      );
-
-      return;
-    }
-
-    /*
-      Обновляем локальный профиль.
-    */
-
-    if (!profiles[activeUserId]) {
-      profiles[activeUserId] = {};
-    }
-
-    profiles[activeUserId] = {
-      ...profiles[activeUserId],
-      ...data
-    };
-
-    /*
-      Обновляем локального пользователя.
-    */
-
-    users[activeUserId].startDate =
-      data.start_date
-        ? String(data.start_date).slice(0, 10)
-        : null;
-
-    /*
-      КЛЮЧЕВОЙ МОМЕНТ:
-      повторно читаем данные из Supabase.
-
-      Поэтому после обновления страницы
-      дата не должна возвращаться обратно.
-    */
-
-    await loadAllData();
-
-    /*
-      activeUserId остаётся прежним,
-      поэтому показываем того же пользователя.
-    */
-
-    render();
-
-    toast(
-      "Дата старта сохранена в базе ✅"
-    );
-
-  } catch (error) {
+  if (error) {
 
     console.error(
-      "changeStart error:",
+      "Ошибка изменения start_date:",
       error
     );
 
     toast(
-      "Ошибка: " +
+      "Ошибка сохранения даты: " +
       error.message
     );
+
+    return;
   }
+
+  if (!data) {
+
+    toast(
+      "Supabase не вернул профиль"
+    );
+
+    return;
+  }
+
+  /*
+    Очень важно:
+
+    Не оставляем в памяти просто value.
+    Берём то, что реально записала база.
+  */
+
+  const savedDate =
+    normalizeStartDate(
+      data.start_date
+    );
+
+  if (!savedDate) {
+
+    console.error(
+      "Supabase вернул неправильную start_date:",
+      data.start_date
+    );
+
+    toast(
+      "Дата не сохранилась в правильном формате"
+    );
+
+    return;
+  }
+
+  /*
+    Обновляем profiles.
+  */
+
+  profiles[activeUserId] = data;
+
+  /*
+    Обновляем users.
+  */
+
+  if (users[activeUserId]) {
+
+    users[activeUserId].startDate =
+      savedDate;
+  }
+
+  /*
+    Проверяем, что локальное значение
+    действительно совпадает с базой.
+  */
+
+  if (
+    users[activeUserId].startDate !==
+    savedDate
+  ) {
+
+    console.error(
+      "Несовпадение даты:",
+      users[activeUserId].startDate,
+      savedDate
+    );
+
+    toast(
+      "Дата не синхронизировалась"
+    );
+
+    return;
+  }
+
+  render();
+
+  toast(
+    "Дата старта сохранена: " +
+    fmtDate(savedDate) +
+    " ✅"
+  );
+}
+
+/*
+  Дополнительная функция.
+  Если нужно проверить, что дата действительно
+  лежит в Supabase, можно вызвать её из консоли:
+      await reloadCurrentProfile()
+*/
+
+async function reloadCurrentProfile() {
+
+  if (!activeUserId) {
+    return false;
+  }
+
+  const {
+    data,
+    error
+  } = await sb
+    .from("profiles")
+    .select("*")
+    .eq(
+      "id",
+      activeUserId
+    )
+    .single();
+
+  if (error) {
+
+    console.error(
+      "Ошибка повторной загрузки профиля:",
+      error
+    );
+
+    return false;
+  }
+
+  profiles[activeUserId] =
+    data;
+
+  if (users[activeUserId]) {
+
+    users[activeUserId].startDate =
+      normalizeStartDate(
+        data.start_date
+      );
+  }
+
+  return true;
 }
 
 /* =========================================================
@@ -3862,6 +3970,16 @@ function switchUser(id) {
 
   activeUserId =
     id;
+
+  /*
+    При переключении пользователя
+    дата берётся именно из его профиля.
+  */
+
+  users[id].startDate =
+    normalizeStartDate(
+      profiles[id]?.start_date
+    );
 
   closeModal();
 

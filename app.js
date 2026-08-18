@@ -185,7 +185,6 @@ async function init() {
 
     /*
       Ищем профиль именно по auth_user_id.
-      Это ключевое изменение.
     */
 
     const profile = Object.values(profiles).find(
@@ -416,16 +415,26 @@ sb.auth.onAuthStateChange(
 ========================================================= */
 
 function emptyUser(profile) {
+
   return {
+
     id: profile.id,
 
     name:
       profile.name ||
       "Пользователь",
 
+    /*
+      ВАЖНО:
+      дата берётся именно из profiles.start_date.
+      Приводим её к формату YYYY-MM-DD,
+      чтобы расчёт дней всегда был корректным.
+    */
+
     startDate:
-      profile.start_date ||
-      null,
+      profile.start_date
+        ? String(profile.start_date).slice(0, 10)
+        : null,
 
     authUserId:
       profile.auth_user_id ||
@@ -458,7 +467,7 @@ async function loadAllData() {
 
   /*
     СНАЧАЛА загружаем profiles.
-    Именно здесь находится настоящая дата старта.
+    Настоящая дата старта хранится здесь.
   */
 
   const profilesResult = await sb
@@ -477,6 +486,11 @@ async function loadAllData() {
     profiles[row.id] = row;
   }
 
+  /*
+    Создаём пользователей непосредственно
+    из строк profiles.
+  */
+
   users = {};
 
   for (const profile of profilesResult.data || []) {
@@ -492,7 +506,7 @@ async function loadAllData() {
   }
 
   /*
-    Теперь загружаем все остальные таблицы
+    Загружаем остальные таблицы
     по profiles.id.
   */
 
@@ -1563,6 +1577,7 @@ async function changeStart() {
     input.value;
 
   if (!value) {
+
     toast(
       "Выбери дату"
     );
@@ -1570,55 +1585,123 @@ async function changeStart() {
     return;
   }
 
-  /*
-    САМОЕ ВАЖНОЕ:
-    сохраняем дату именно в profiles.
-  */
-
-  const {
-    error
-  } = await sb
-    .from("profiles")
-    .update({
-      start_date:
-        value
-    })
-    .eq(
-      "id",
-      activeUserId
-    );
-
-  if (error) {
-
-    console.error(error);
+  if (!activeUserId) {
 
     toast(
-      "Ошибка сохранения даты"
+      "Пользователь не выбран"
     );
 
     return;
   }
 
-  /*
-    Обновляем локальные данные.
-  */
+  try {
 
-  users[activeUserId]
-    .startDate = value;
+    /*
+      Сохраняем дату непосредственно
+      в profiles.start_date.
 
-  if (
-    profiles[activeUserId]
-  ) {
+      select() нужен для того, чтобы убедиться,
+      что Supabase действительно вернул
+      обновлённую строку.
+    */
 
-    profiles[activeUserId]
-      .start_date = value;
+    const {
+      data,
+      error
+    } = await sb
+      .from("profiles")
+      .update({
+        start_date: value
+      })
+      .eq(
+        "id",
+        activeUserId
+      )
+      .select("*")
+      .single();
+
+    if (error) {
+
+      console.error(
+        "Ошибка profiles.update:",
+        error
+      );
+
+      toast(
+        "Не удалось сохранить дату"
+      );
+
+      return;
+    }
+
+    if (!data) {
+
+      console.error(
+        "Supabase не вернул профиль после обновления"
+      );
+
+      toast(
+        "Дата не сохранилась"
+      );
+
+      return;
+    }
+
+    /*
+      Обновляем локальный профиль.
+    */
+
+    if (!profiles[activeUserId]) {
+      profiles[activeUserId] = {};
+    }
+
+    profiles[activeUserId] = {
+      ...profiles[activeUserId],
+      ...data
+    };
+
+    /*
+      Обновляем локального пользователя.
+    */
+
+    users[activeUserId].startDate =
+      data.start_date
+        ? String(data.start_date).slice(0, 10)
+        : null;
+
+    /*
+      КЛЮЧЕВОЙ МОМЕНТ:
+      повторно читаем данные из Supabase.
+
+      Поэтому после обновления страницы
+      дата не должна возвращаться обратно.
+    */
+
+    await loadAllData();
+
+    /*
+      activeUserId остаётся прежним,
+      поэтому показываем того же пользователя.
+    */
+
+    render();
+
+    toast(
+      "Дата старта сохранена в базе ✅"
+    );
+
+  } catch (error) {
+
+    console.error(
+      "changeStart error:",
+      error
+    );
+
+    toast(
+      "Ошибка: " +
+      error.message
+    );
   }
-
-  render();
-
-  toast(
-    "Дата старта сохранена ✅"
-  );
 }
 
 /* =========================================================

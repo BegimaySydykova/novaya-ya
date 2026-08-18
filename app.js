@@ -24,12 +24,9 @@ const defaultHabits = [
 
 let currentUserId = null;
 let activeUserId = null;
-
 let users = {};
 let currentView = "today";
 let calCursor = new Date();
-
-let loading = false;
 
 function nameOf(id){
   return USER_NAMES[id] || "Пользователь";
@@ -52,6 +49,7 @@ function iso(d){
 
 function fmtDate(s){
   if(!s) return "—";
+
   return new Date(s+"T00:00:00").toLocaleDateString("ru-RU",{
     day:"2-digit",
     month:"2-digit",
@@ -71,8 +69,12 @@ function toast(text){
   const x = document.createElement("div");
   x.className = "toast";
   x.textContent = text;
+
   document.body.appendChild(x);
-  setTimeout(()=>x.remove(),1800);
+
+  setTimeout(()=>{
+    x.remove();
+  },1800);
 }
 
 function escapeHtml(value){
@@ -89,8 +91,12 @@ function escapeHtml(value){
 ========================================================= */
 
 async function init(){
+
   try{
-    const {data:{session}} = await sb.auth.getSession();
+
+    const {
+      data:{session}
+    } = await sb.auth.getSession();
 
     if(!session){
       renderLogin();
@@ -100,12 +106,23 @@ async function init(){
     currentUserId = session.user.id;
 
     if(!USER_NAMES[currentUserId]){
+
       document.body.innerHTML = `
         <div style="padding:40px;font-family:sans-serif">
           <h2>Пользователь не найден</h2>
-          <p>Этот аккаунт пока не добавлен в «Новую Я».</p>
-          <button onclick="logout()" class="btn">Выйти</button>
-        </div>`;
+          <p>
+            Этот аккаунт пока не добавлен в «Новую Я».
+          </p>
+
+          <button
+            onclick="logout()"
+            class="btn"
+          >
+            Выйти
+          </button>
+        </div>
+      `;
+
       return;
     }
 
@@ -116,13 +133,17 @@ async function init(){
     render();
 
   }catch(error){
+
     console.error(error);
+
     renderLogin(error.message);
   }
 }
 
 function renderLogin(error=""){
+
   document.body.innerHTML = `
+
     <div style="
       min-height:100vh;
       display:flex;
@@ -132,6 +153,7 @@ function renderLogin(error=""){
       background:#f7f2ec;
       font-family:Arial,sans-serif;
     ">
+
       <div style="
         width:100%;
         max-width:420px;
@@ -140,32 +162,70 @@ function renderLogin(error=""){
         padding:30px;
         box-shadow:0 12px 35px rgba(66,48,35,.08);
       ">
-        <div style="text-align:center;margin-bottom:25px">
-          <div style="font-size:42px">🌱</div>
-          <h1 style="margin:8px 0">Новая Я</h1>
-          <p style="color:#8b817a">365 дней вместе</p>
+
+        <div style="
+          text-align:center;
+          margin-bottom:25px
+        ">
+
+          <div style="font-size:42px">
+            🌱
+          </div>
+
+          <h1 style="margin:8px 0">
+            Новая Я
+          </h1>
+
+          <p style="color:#8b817a">
+            365 дней вместе
+          </p>
+
         </div>
 
         <div class="field">
+
           <label>Email</label>
-          <input id="loginEmail" class="input" type="email"
-                 placeholder="Введите email">
+
+          <input
+            id="loginEmail"
+            class="input"
+            type="email"
+            placeholder="Введите email"
+          >
+
         </div>
 
-        <div class="field" style="margin-top:12px">
+        <div
+          class="field"
+          style="margin-top:12px"
+        >
+
           <label>Пароль</label>
-          <input id="loginPassword" class="input" type="password"
-                 placeholder="Введите пароль">
+
+          <input
+            id="loginPassword"
+            class="input"
+            type="password"
+            placeholder="Введите пароль"
+          >
+
         </div>
 
-        <button class="btn" style="width:100%;margin-top:18px"
-                onclick="login()">
+        <button
+          class="btn"
+          style="width:100%;margin-top:18px"
+          onclick="login()"
+        >
           Войти
         </button>
 
         ${
           error
-          ? `<p style="color:#b44;margin-top:15px">${escapeHtml(error)}</p>`
+          ? `
+            <p style="color:#b44;margin-top:15px">
+              ${escapeHtml(error)}
+            </p>
+          `
           : ""
         }
 
@@ -177,22 +237,36 @@ function renderLogin(error=""){
         ">
           Вход выполняется через Supabase
         </p>
+
       </div>
+
     </div>
   `;
 }
 
 async function login(){
-  const email = document.getElementById("loginEmail").value.trim();
-  const password = document.getElementById("loginPassword").value;
+
+  const email =
+    document.getElementById("loginEmail")
+      .value.trim();
+
+  const password =
+    document.getElementById("loginPassword")
+      .value;
 
   if(!email || !password){
+
     toast("Введи email и пароль");
+
     return;
   }
 
   try{
-    const {data,error} = await sb.auth.signInWithPassword({
+
+    const {
+      data,
+      error
+    } = await sb.auth.signInWithPassword({
       email,
       password
     });
@@ -202,8 +276,11 @@ async function login(){
     currentUserId = data.user.id;
 
     if(!USER_NAMES[currentUserId]){
+
       await sb.auth.signOut();
+
       toast("Этот пользователь не добавлен");
+
       return;
     }
 
@@ -214,20 +291,29 @@ async function login(){
     render();
 
   }catch(error){
+
     console.error(error);
-    toast("Ошибка входа: "+error.message);
+
+    toast(
+      "Ошибка входа: " +
+      error.message
+    );
   }
 }
 
 async function logout(){
+
   await sb.auth.signOut();
+
   location.reload();
 }
 
-sb.auth.onAuthStateChange((event,session)=>{
+sb.auth.onAuthStateChange((event)=>{
+
   if(event === "SIGNED_OUT"){
     location.reload();
   }
+
 });
 
 /* =========================================================
@@ -235,31 +321,49 @@ sb.auth.onAuthStateChange((event,session)=>{
 ========================================================= */
 
 function emptyUser(id){
+
   return {
+
     id,
+
     name:nameOf(id),
+
+    /*
+      Это значение используется ТОЛЬКО если
+      в Supabase ещё нет даты старта.
+    */
     startDate:"2026-08-20",
+
     days:{},
+
     weights:[],
+
     measurements:[],
+
     goals:{
       socials:[],
       alcohol:false,
       wishlist:false,
       vision:false
     },
+
     rewards:{},
+
     notes:{}
+
   };
 }
 
 async function loadAllData(){
+
   const ids = Object.keys(USER_NAMES);
 
   users = {};
 
   for(const id of ids){
+
     users[id] = emptyUser(id);
+
   }
 
   const [
@@ -270,12 +374,37 @@ async function loadAllData(){
     rewardsResult,
     weightsResult
   ] = await Promise.all([
-    sb.from("days").select("*").in("user_id",ids),
-    sb.from("goals").select("*").in("user_id",ids),
-    sb.from("measurements").select("*").in("user_id",ids),
-    sb.from("notes").select("*").in("user_id",ids),
-    sb.from("rewards").select("*").in("user_id",ids),
-    sb.from("weights").select("*").in("user_id",ids)
+
+    sb
+      .from("days")
+      .select("*")
+      .in("user_id",ids),
+
+    sb
+      .from("goals")
+      .select("*")
+      .in("user_id",ids),
+
+    sb
+      .from("measurements")
+      .select("*")
+      .in("user_id",ids),
+
+    sb
+      .from("notes")
+      .select("*")
+      .in("user_id",ids),
+
+    sb
+      .from("rewards")
+      .select("*")
+      .in("user_id",ids),
+
+    sb
+      .from("weights")
+      .select("*")
+      .in("user_id",ids)
+
   ]);
 
   const results = [
@@ -288,78 +417,157 @@ async function loadAllData(){
   ];
 
   for(const r of results){
+
     if(r.error){
+
       console.error(r.error);
+
       throw r.error;
+
     }
   }
 
+  /* DAYS */
+
   for(const row of daysResult.data || []){
+
     if(!users[row.user_id]) continue;
 
     users[row.user_id].days[row.day_date] = {
+
       id:row.id,
+
       checks:row.checks || {},
+
       steps:row.steps ?? "",
+
       pages:row.pages ?? "",
+
       minutes:row.minutes ?? "",
+
       meal:row.meal || ""
+
     };
   }
 
+  /* GOALS */
+
   for(const row of goalsResult.data || []){
+
     if(!users[row.user_id]) continue;
 
     users[row.user_id].goals = {
-      socials:Array.isArray(row.socials) ? row.socials : [],
+
+      socials:Array.isArray(row.socials)
+        ? row.socials
+        : [],
+
       alcohol:!!row.alcohol,
+
       wishlist:!!row.wishlist,
+
       vision:!!row.vision
+
     };
 
+    /*
+      ВАЖНО:
+      теперь дата старта читается
+      из Supabase.
+    */
+
     if(row.start_date){
-      users[row.user_id].startDate = row.start_date;
+
+      users[row.user_id].startDate =
+        String(row.start_date).slice(0,10);
+
     }
+
   }
+
+  /* MEASUREMENTS */
 
   for(const row of measurementsResult.data || []){
+
     if(!users[row.user_id]) continue;
 
-    users[row.user_id].measurements.push({
-      id:row.id,
-      date:row.record_date,
-      chest:row.chest,
-      waist:row.waist,
-      belly:row.belly,
-      hips:row.hips
-    });
+    users[row.user_id]
+      .measurements
+      .push({
+
+        id:row.id,
+
+        date:row.record_date,
+
+        chest:row.chest,
+
+        waist:row.waist,
+
+        belly:row.belly,
+
+        hips:row.hips
+
+      });
+
   }
+
+  /* NOTES */
 
   for(const row of notesResult.data || []){
+
     if(!users[row.user_id]) continue;
 
-    users[row.user_id].notes[row.note_date] = row.text || "";
+    users[row.user_id]
+      .notes[row.note_date] =
+        row.text || "";
+
   }
+
+  /* REWARDS */
 
   for(const row of rewardsResult.data || []){
+
     if(!users[row.user_id]) continue;
 
-    users[row.user_id].rewards[row.reward_key] = true;
+    users[row.user_id]
+      .rewards[row.reward_key] = true;
+
   }
 
+  /* WEIGHTS */
+
   for(const row of weightsResult.data || []){
+
     if(!users[row.user_id]) continue;
 
-    users[row.user_id].weights.push({
-      id:row.id,
-      date:row.record_date,
-      value:Number(row.value)
-    });
+    users[row.user_id]
+      .weights
+      .push({
+
+        id:row.id,
+
+        date:row.record_date,
+
+        value:Number(row.value)
+
+      });
+
   }
 
   for(const id of ids){
-    users[id].measurements.sort((a,b)=>a.date.localeCompare(b.date));
-    users[id].weights.sort((a,b)=>a.date.localeCompare(b.date));
+
+    users[id]
+      .measurements
+      .sort((a,b)=>
+        a.date.localeCompare(b.date)
+      );
+
+    users[id]
+      .weights
+      .sort((a,b)=>
+        a.date.localeCompare(b.date)
+      );
+
   }
 }
 
@@ -368,38 +576,67 @@ async function loadAllData(){
 ========================================================= */
 
 function dayNumFor(userId,date){
-  const start = new Date(users[userId].startDate+"T00:00:00");
-  const d = new Date(date+"T00:00:00");
 
-  return Math.floor((d-start)/86400000)+1;
+  const start =
+    new Date(
+      users[userId].startDate+
+      "T00:00:00"
+    );
+
+  const d =
+    new Date(
+      date+
+      "T00:00:00"
+    );
+
+  return Math.floor(
+    (d-start)/86400000
+  )+1;
 }
 
 function dayNum(date){
-  return dayNumFor(activeUserId,date);
+
+  return dayNumFor(
+    activeUserId,
+    date
+  );
 }
 
 function eligible(date){
+
   return dayNum(date)>=1;
 }
 
 function dayData(date){
-  return user().days[date] || {
+
+  return users[activeUserId].days[date] || {
+
     checks:{},
+
     steps:"",
+
     pages:"",
+
     minutes:"",
+
     meal:""
+
   };
 }
 
 function yoga(date){
-  const n = dayNum(date);
+
+  const n=dayNum(date);
+
   return n>=1 && n%2===1;
 }
 
 function habitsFor(date){
+
   return [
+
     ...defaultHabits,
+
     ...(yoga(date)
       ? [{
           id:"yoga",
@@ -408,16 +645,21 @@ function habitsFor(date){
           meta:"Сегодня день йоги"
         }]
       : [])
+
   ];
 }
 
-function statsFor(date,userId=activeUserId){
-  const d = users[userId].days[date] || {checks:{}};
+function habitsForUser(userId,date){
 
-  const n = dayNumFor(userId,date);
+  const n=dayNumFor(
+    userId,
+    date
+  );
 
-  const hs = [
+  return [
+
     ...defaultHabits,
+
     ...(n>=1 && n%2===1
       ? [{
           id:"yoga",
@@ -426,100 +668,236 @@ function statsFor(date,userId=activeUserId){
           meta:"Сегодня день йоги"
         }]
       : [])
+
+  ];
+}
+
+function statsFor(date,userId=activeUserId){
+
+  const d =
+    users[userId].days[date] ||
+    {checks:{}};
+
+  const n =
+    dayNumFor(
+      userId,
+      date
+    );
+
+  const hs = [
+
+    ...defaultHabits,
+
+    ...(n>=1 && n%2===1
+      ? [{
+          id:"yoga",
+          icon:"🧘",
+          title:"Йога 15 минут"
+        }]
+      : [])
+
   ];
 
-  const done = hs.filter(h=>d.checks?.[h.id]).length;
+  const done =
+    hs.filter(
+      h=>d.checks?.[h.id]
+    ).length;
 
   return {
+
     done,
+
     total:hs.length,
+
     pct:hs.length
-      ? Math.round(done/hs.length*100)
+      ? Math.round(
+          done/hs.length*100
+        )
       : 0
+
   };
 }
 
 function challengeDays(){
-  const start = new Date(user().startDate+"T00:00:00");
-  const now = new Date(today()+"T00:00:00");
+
+  const start =
+    new Date(
+      user().startDate+
+      "T00:00:00"
+    );
+
+  const now =
+    new Date(
+      today()+
+      "T00:00:00"
+    );
 
   return Math.max(
     0,
-    Math.floor((now-start)/86400000)+1
+    Math.floor(
+      (now-start)/86400000
+    )+1
   );
 }
 
-function currentStreak(userId=activeUserId){
-  let n = 0;
-  let d = new Date(today()+"T00:00:00");
+function currentStreak(
+  userId=activeUserId
+){
+
+  let n=0;
+
+  let d =
+    new Date(
+      today()+
+      "T00:00:00"
+    );
 
   for(let i=0;i<10000;i++){
-    const s = iso(d);
 
-    if(dayNumFor(userId,s)<1) break;
+    const s=iso(d);
 
-    if(statsFor(s,userId).pct===100){
+    if(
+      dayNumFor(
+        userId,
+        s
+      )<1
+    ) break;
+
+    if(
+      statsFor(
+        s,
+        userId
+      ).pct===100
+    ){
+
       n++;
+
     }else{
+
       break;
+
     }
 
-    d.setDate(d.getDate()-1);
+    d.setDate(
+      d.getDate()-1
+    );
+
   }
 
   return n;
 }
 
-function bestStreak(userId=activeUserId){
-  let best = 0;
-  let run = 0;
+function bestStreak(
+  userId=activeUserId
+){
 
-  const start = new Date(users[userId].startDate+"T00:00:00");
-  const end = new Date(today()+"T00:00:00");
+  let best=0;
+
+  let run=0;
+
+  const start =
+    new Date(
+      users[userId].startDate+
+      "T00:00:00"
+    );
+
+  const end =
+    new Date(
+      today()+
+      "T00:00:00"
+    );
 
   for(
     let d=new Date(start);
     d<=end;
-    d.setDate(d.getDate()+1)
+    d.setDate(
+      d.getDate()+1
+    )
   ){
-    const p = statsFor(iso(d),userId).pct;
+
+    const p =
+      statsFor(
+        iso(d),
+        userId
+      ).pct;
 
     if(p===100){
+
       run++;
-      best=Math.max(best,run);
+
+      best=
+        Math.max(
+          best,
+          run
+        );
+
     }else{
+
       run=0;
+
     }
   }
 
   return best;
 }
 
-function overall(userId=activeUserId){
+function overall(
+  userId=activeUserId
+){
+
   let total=0;
+
   let sum=0;
+
   let full=0;
 
-  const start = new Date(users[userId].startDate+"T00:00:00");
-  const end = new Date(today()+"T00:00:00");
+  const start =
+    new Date(
+      users[userId].startDate+
+      "T00:00:00"
+    );
+
+  const end =
+    new Date(
+      today()+
+      "T00:00:00"
+    );
 
   for(
     let d=new Date(start);
     d<=end;
-    d.setDate(d.getDate()+1)
+    d.setDate(
+      d.getDate()+1
+    )
   ){
-    const s=statsFor(iso(d),userId);
+
+    const s=
+      statsFor(
+        iso(d),
+        userId
+      );
 
     sum+=s.pct;
+
     total++;
 
-    if(s.pct===100) full++;
+    if(s.pct===100){
+      full++;
+    }
   }
 
   return {
+
     days:total,
-    avg:total?Math.round(sum/total):0,
+
+    avg:total
+      ? Math.round(
+          sum/total
+        )
+      : 0,
+
     full
+
   };
 }
 
@@ -527,170 +905,349 @@ function overall(userId=activeUserId){
    WEIGHT
 ========================================================= */
 
-function lastWeight(userId=activeUserId){
-  const arr=users[userId].weights;
+function lastWeight(
+  userId=activeUserId
+){
+
+  const arr=
+    users[userId].weights;
 
   return arr.length
-    ? Number(arr[arr.length-1].value)
+    ? Number(
+        arr[arr.length-1].value
+      )
     : null;
 }
 
-function initialWeight(userId=activeUserId){
-  const arr=users[userId].weights;
+function initialWeight(
+  userId=activeUserId
+){
+
+  const arr=
+    users[userId].weights;
 
   return arr.length
     ? Number(arr[0].value)
     : null;
 }
 
-function lostKg(userId=activeUserId){
-  const a=initialWeight(userId);
-  const b=lastWeight(userId);
+function lostKg(
+  userId=activeUserId
+){
+
+  const a=
+    initialWeight(userId);
+
+  const b=
+    lastWeight(userId);
 
   return a!=null && b!=null
-    ? Math.max(0,a-b)
+    ? Math.max(
+        0,
+        a-b
+      )
     : 0;
 }
 
-function beautyFund(userId=activeUserId){
-  return Math.floor(lostKg(userId))*1000;
+function beautyFund(
+  userId=activeUserId
+){
+
+  return Math.floor(
+    lostKg(userId)
+  )*1000;
 }
 
-function habitRate(id,userId=activeUserId){
-  const start = new Date(users[userId].startDate+"T00:00:00");
-  const end = new Date(today()+"T00:00:00");
+function habitRate(
+  id,
+  userId=activeUserId
+){
+
+  const start =
+    new Date(
+      users[userId].startDate+
+      "T00:00:00"
+    );
+
+  const end =
+    new Date(
+      today()+
+      "T00:00:00"
+    );
 
   let total=0;
+
   let done=0;
 
   for(
     let d=new Date(start);
     d<=end;
-    d.setDate(d.getDate()+1)
+    d.setDate(
+      d.getDate()+1
+    )
   ){
+
     const s=iso(d);
 
-    const n=dayNumFor(userId,s);
+    const n=
+      dayNumFor(
+        userId,
+        s
+      );
 
     const hs=[
+
       ...defaultHabits,
+
       ...(n>=1 && n%2===1
         ? [{id:"yoga"}]
         : [])
+
     ];
 
-    if(hs.some(h=>h.id===id)){
+    if(
+      hs.some(
+        h=>h.id===id
+      )
+    ){
+
       total++;
 
-      if(users[userId].days[s]?.checks?.[id]){
+      if(
+        users[userId]
+          .days[s]
+          ?.checks
+          ?.[id]
+      ){
         done++;
       }
+
     }
+
   }
 
   return total
-    ? Math.round(done/total*100)
+    ? Math.round(
+        done/total*100
+      )
     : 0;
 }
 
 /* =========================================================
-   SAVE DAYS
+   SAVE DAY
 ========================================================= */
 
 async function saveDay(date){
+
   const d=dayData(date);
 
   const payload={
+
     user_id:activeUserId,
+
     day_date:date,
+
     checks:d.checks || {},
-    steps:d.steps==="" ? null : Number(d.steps),
-    pages:d.pages==="" ? null : Number(d.pages),
-    minutes:d.minutes==="" ? null : Number(d.minutes),
+
+    steps:
+      d.steps===""
+      ? null
+      : Number(d.steps),
+
+    pages:
+      d.pages===""
+      ? null
+      : Number(d.pages),
+
+    minutes:
+      d.minutes===""
+      ? null
+      : Number(d.minutes),
+
     meal:d.meal || ""
+
   };
 
-  const {data,error}=await sb
+  const {
+    data,
+    error
+  } = await sb
     .from("days")
-    .upsert(payload,{onConflict:"user_id,day_date"})
+    .upsert(
+      payload,
+      {
+        onConflict:
+          "user_id,day_date"
+      }
+    )
     .select()
     .single();
 
   if(error){
-    console.error(error);
-    toast("Ошибка сохранения");
+
+    console.error(
+      "SAVE DAY ERROR:",
+      error
+    );
+
+    toast(
+      "Ошибка сохранения: "+
+      error.message
+    );
+
     return false;
   }
 
-  users[activeUserId].days[date]={
-    id:data.id,
-    checks:data.checks || {},
-    steps:data.steps ?? "",
-    pages:data.pages ?? "",
-    minutes:data.minutes ?? "",
-    meal:data.meal || ""
-  };
+  users[activeUserId]
+    .days[date]={
+
+      id:data.id,
+
+      checks:data.checks || {},
+
+      steps:data.steps ?? "",
+
+      pages:data.pages ?? "",
+
+      minutes:data.minutes ?? "",
+
+      meal:data.meal || ""
+
+    };
 
   return true;
 }
 
-async function toggleHabit(date,id,val){
-  if(!users[activeUserId].days[date]){
-    users[activeUserId].days[date]={
-      checks:{},
-      steps:"",
-      pages:"",
-      minutes:"",
-      meal:""
-    };
+async function toggleHabit(
+  date,
+  id,
+  val
+){
+
+  if(
+    !users[activeUserId]
+      .days[date]
+  ){
+
+    users[activeUserId]
+      .days[date]={
+
+        checks:{},
+
+        steps:"",
+
+        pages:"",
+
+        minutes:"",
+
+        meal:""
+
+      };
+
   }
 
-  if(!users[activeUserId].days[date].checks){
-    users[activeUserId].days[date].checks={};
+  if(
+    !users[activeUserId]
+      .days[date]
+      .checks
+  ){
+
+    users[activeUserId]
+      .days[date]
+      .checks={};
+
   }
 
-  users[activeUserId].days[date].checks[id]=val;
+  users[activeUserId]
+    .days[date]
+    .checks[id]=val;
 
-  const ok=await saveDay(date);
+  const ok=
+    await saveDay(date);
 
   if(ok){
+
     render();
+
   }
 }
 
-async function setExtra(date,key,val){
-  if(!users[activeUserId].days[date]){
-    users[activeUserId].days[date]={
-      checks:{},
-      steps:"",
-      pages:"",
-      minutes:"",
-      meal:""
-    };
+async function setExtra(
+  date,
+  key,
+  val
+){
+
+  if(
+    !users[activeUserId]
+      .days[date]
+  ){
+
+    users[activeUserId]
+      .days[date]={
+
+        checks:{},
+
+        steps:"",
+
+        pages:"",
+
+        minutes:"",
+
+        meal:""
+
+      };
+
   }
 
-  users[activeUserId].days[date][key]=val;
+  users[activeUserId]
+    .days[date][key]=val;
 
   await saveDay(date);
+
 }
 
 async function saveMeal(){
-  const value=document.getElementById("meal").value;
 
-  if(!users[activeUserId].days[today()]){
-    users[activeUserId].days[today()]={
-      checks:{},
-      steps:"",
-      pages:"",
-      minutes:"",
-      meal:""
-    };
+  const value=
+    document.getElementById(
+      "meal"
+    ).value;
+
+  if(
+    !users[activeUserId]
+      .days[today()]
+  ){
+
+    users[activeUserId]
+      .days[today()]={
+
+        checks:{},
+
+        steps:"",
+
+        pages:"",
+
+        minutes:"",
+
+        meal:""
+
+      };
+
   }
 
-  users[activeUserId].days[today()].meal=value;
+  users[activeUserId]
+    .days[today()]
+    .meal=value;
 
-  if(await saveDay(today())){
-    toast("Питание сохранено 🍽️");
+  if(
+    await saveDay(today())
+  ){
+
+    toast(
+      "Питание сохранено 🍽️"
+    );
+
   }
 }
 
@@ -699,27 +1256,45 @@ async function saveMeal(){
 ========================================================= */
 
 async function saveNote(){
-  const text=document.getElementById("note").value;
 
-  const {error}=await sb
+  const text=
+    document.getElementById(
+      "note"
+    ).value;
+
+  const {
+    error
+  } = await sb
     .from("notes")
-    .upsert({
-      user_id:activeUserId,
-      note_date:today(),
-      text
-    },{
-      onConflict:"user_id,note_date"
-    });
+    .upsert(
+      {
+        user_id:activeUserId,
+        note_date:today(),
+        text
+      },
+      {
+        onConflict:
+          "user_id,note_date"
+      }
+    );
 
   if(error){
+
     console.error(error);
-    toast("Ошибка сохранения заметки");
+
+    toast(
+      "Ошибка сохранения заметки"
+    );
+
     return;
   }
 
-  users[activeUserId].notes[today()]=text;
+  users[activeUserId]
+    .notes[today()]=text;
 
-  toast("Заметка сохранена ✨");
+  toast(
+    "Заметка сохранена ✨"
+  );
 }
 
 /* =========================================================
@@ -727,47 +1302,153 @@ async function saveNote(){
 ========================================================= */
 
 async function saveGoals(){
+
   const g=user().goals;
 
-  const {error}=await sb
+  const {
+    error
+  } = await sb
     .from("goals")
-    .upsert({
-      user_id:activeUserId,
-      socials:g.socials,
-      alcohol:g.alcohol,
-      wishlist:g.wishlist,
-      vision:g.vision
-    },{
-      onConflict:"user_id"
-    });
+    .upsert(
+      {
+
+        user_id:activeUserId,
+
+        socials:g.socials,
+
+        alcohol:g.alcohol,
+
+        wishlist:g.wishlist,
+
+        vision:g.vision,
+
+        /*
+          ВАЖНО:
+          дата старта теперь сохраняется
+        */
+        start_date:user().startDate
+
+      },
+      {
+        onConflict:"user_id"
+      }
+    );
 
   if(error){
-    console.error(error);
-    toast("Ошибка сохранения целей");
+
+    console.error(
+      "SAVE GOALS ERROR:",
+      error
+    );
+
+    toast(
+      "Ошибка сохранения целей: "+
+      error.message
+    );
+
     return false;
   }
 
   return true;
 }
 
-async function toggleSocial(x,v){
-  const a=user().goals.socials;
+async function toggleSocial(
+  x,
+  v
+){
 
-  if(v && !a.includes(x)){
+  const a=
+    user().goals.socials;
+
+  if(
+    v &&
+    !a.includes(x)
+  ){
+
     a.push(x);
+
   }
 
   if(!v){
-    const i=a.indexOf(x);
-    if(i>=0) a.splice(i,1);
+
+    const i=
+      a.indexOf(x);
+
+    if(i>=0){
+      a.splice(i,1);
+    }
+
   }
 
   await saveGoals();
 }
 
-async function toggleGoal(key,value){
+async function toggleGoal(
+  key,
+  value
+){
+
   user().goals[key]=value;
+
   await saveGoals();
+}
+
+/* =========================================================
+   START DATE
+========================================================= */
+
+async function changeStart(){
+
+  const v=
+    document.getElementById(
+      "startDate"
+    ).value;
+
+  if(!v){
+
+    toast(
+      "Выбери дату"
+    );
+
+    return;
+  }
+
+  /*
+    Сначала меняем локально
+  */
+
+  user().startDate=v;
+
+  /*
+    Потом обязательно сохраняем
+    в Supabase.
+  */
+
+  const ok=
+    await saveGoals();
+
+  if(!ok){
+
+    return;
+  }
+
+  /*
+    Перезагружаем данные из базы,
+    чтобы убедиться, что всё реально
+    записалось.
+  */
+
+  await loadAllData();
+
+  activeUserId=currentUserId === activeUserId
+    ? activeUserId
+    : activeUserId;
+
+  render();
+
+  toast(
+    "Дата старта сохранена 💾"
+  );
 }
 
 /* =========================================================
@@ -775,101 +1456,211 @@ async function toggleGoal(key,value){
 ========================================================= */
 
 async function saveWeight(){
-  const v=parseFloat(document.getElementById("w").value);
 
-  if(!v){
-    toast("Введи вес");
-    return;
-  }
-
-  const {error:weightError}=await sb
-    .from("weights")
-    .insert({
-      user_id:activeUserId,
-      record_date:today(),
-      value:v
-    });
-
-  if(weightError){
-    console.error(weightError);
-    toast("Ошибка сохранения веса");
-    return;
-  }
-
-  const names=["chest","waist","belly","hips"];
-  const vals={};
-
-  names.forEach((n,i)=>{
-    const x=parseFloat(
-      document.getElementById("m"+i).value
+  const v=
+    parseFloat(
+      document.getElementById(
+        "w"
+      ).value
     );
 
-    if(!isNaN(x)){
-      vals[n]=x;
-    }
-  });
+  if(!v){
 
-  const {error:measurementError}=await sb
+    toast(
+      "Введи вес"
+    );
+
+    return;
+  }
+
+  const {
+    error:weightError
+  } = await sb
+    .from("weights")
+    .upsert(
+      {
+
+        user_id:activeUserId,
+
+        record_date:today(),
+
+        value:v
+
+      },
+      {
+        onConflict:
+          "user_id,record_date"
+      }
+    );
+
+  if(weightError){
+
+    console.error(
+      weightError
+    );
+
+    toast(
+      "Ошибка сохранения веса"
+    );
+
+    return;
+  }
+
+  const names=[
+    "chest",
+    "waist",
+    "belly",
+    "hips"
+  ];
+
+  const vals={};
+
+  names.forEach(
+    (n,i)=>{
+
+      const x=
+        parseFloat(
+          document.getElementById(
+            "m"+i
+          ).value
+        );
+
+      if(!isNaN(x)){
+        vals[n]=x;
+      }
+
+    }
+  );
+
+  const {
+    error:measurementError
+  } = await sb
     .from("measurements")
-    .insert({
-      user_id:activeUserId,
-      record_date:today(),
-      chest:vals.chest ?? null,
-      waist:vals.waist ?? null,
-      belly:vals.belly ?? null,
-      hips:vals.hips ?? null
-    });
+    .upsert(
+      {
+
+        user_id:activeUserId,
+
+        record_date:today(),
+
+        chest:
+          vals.chest ?? null,
+
+        waist:
+          vals.waist ?? null,
+
+        belly:
+          vals.belly ?? null,
+
+        hips:
+          vals.hips ?? null
+
+      },
+      {
+        onConflict:
+          "user_id,record_date"
+      }
+    );
 
   if(measurementError){
-    console.error(measurementError);
-    toast("Вес сохранён, замеры нет");
+
+    console.error(
+      measurementError
+    );
+
+    toast(
+      "Вес сохранён, замеры нет"
+    );
+
   }
 
   await loadAllData();
 
   closeModal();
+
   render();
 
-  toast("Данные сохранены ⚖️");
+  toast(
+    "Данные сохранены ⚖️"
+  );
 }
 
 /* =========================================================
    REWARDS
 ========================================================= */
 
-function rewardCount(type,value,userId=activeUserId){
-  const lost=lostKg(userId);
-  const st=currentStreak(userId);
+function rewardCount(
+  type,
+  value,
+  userId=activeUserId
+){
+
+  const lost=
+    lostKg(userId);
+
+  const st=
+    currentStreak(userId);
 
   if(type==="kg"){
-    return Math.floor(lost/value);
+
+    return Math.floor(
+      lost/value
+    );
+
   }
 
   if(type==="streak"){
-    return Math.floor(st/value);
+
+    return Math.floor(
+      st/value
+    );
+
   }
 
   return 0;
 }
 
-function rewardKey(type,value,index){
+function rewardKey(
+  type,
+  value,
+  index
+){
+
   return `${type}_${value}_${index}`;
+
 }
 
 async function claim(id){
-  const {error}=await sb
+
+  const {
+    error
+  } = await sb
     .from("rewards")
-    .upsert({
-      user_id:activeUserId,
-      reward_key:id,
-      claimed_at:new Date().toISOString()
-    },{
-      onConflict:"user_id,reward_key"
-    });
+    .upsert(
+      {
+
+        user_id:activeUserId,
+
+        reward_key:id,
+
+        claimed_at:
+          new Date().toISOString()
+
+      },
+      {
+        onConflict:
+          "user_id,reward_key"
+      }
+    );
 
   if(error){
+
     console.error(error);
-    toast("Ошибка сохранения награды");
+
+    toast(
+      "Ошибка сохранения награды"
+    );
+
     return;
   }
 
@@ -877,7 +1668,9 @@ async function claim(id){
 
   render();
 
-  toast("Награда отмечена 🎉");
+  toast(
+    "Награда отмечена 🎉"
+  );
 }
 
 /* =========================================================
@@ -885,40 +1678,66 @@ async function claim(id){
 ========================================================= */
 
 function render(){
+
   if(!user()) return;
 
-  document.getElementById("profileBtn").textContent =
+  document.getElementById(
+    "profileBtn"
+  ).textContent =
     `${user().name} ▾`;
 
-  document.querySelectorAll(".view")
-    .forEach(v=>v.classList.remove("active"));
+  document
+    .querySelectorAll(".view")
+    .forEach(
+      v=>v.classList.remove(
+        "active"
+      )
+    );
 
-  const target=document.getElementById(
-    "view-"+currentView
-  );
+  const target=
+    document.getElementById(
+      "view-"+currentView
+    );
 
   if(target){
-    target.classList.add("active");
+
+    target.classList.add(
+      "active"
+    );
+
   }
 
-  document.querySelectorAll(".nav-item")
-    .forEach(b=>{
-      b.classList.toggle(
-        "active",
-        b.dataset.view===currentView
-      );
-    });
+  document
+    .querySelectorAll(".nav-item")
+    .forEach(
+      b=>{
+
+        b.classList.toggle(
+          "active",
+          b.dataset.view===currentView
+        );
+
+      }
+    );
 
   const renderers={
+
     today:renderToday,
+
     calendar:renderCalendar,
+
     progress:renderProgress,
+
     rewards:renderRewards,
+
     us:renderUs
+
   };
 
   if(renderers[currentView]){
+
     renderers[currentView]();
+
   }
 }
 
@@ -927,103 +1746,171 @@ function render(){
 ========================================================= */
 
 function renderToday(){
-  const s=statsFor(today());
-  const u=user();
-  const n=dayNum(today());
 
-  document.getElementById("view-today").innerHTML=`
+  const s=
+    statsFor(today());
+
+  const u=user();
+
+  const n=
+    dayNum(today());
+
+  document.getElementById(
+    "view-today"
+  ).innerHTML=`
+
     <div class="hero">
+
       <div class="hero-row">
+
         <div>
+
           <div class="muted">
-            ${new Date().toLocaleDateString(
-              "ru-RU",
-              {
-                weekday:"long",
-                day:"numeric",
-                month:"long"
-              }
-            )}
+
+            ${new Date()
+              .toLocaleDateString(
+                "ru-RU",
+                {
+                  weekday:"long",
+                  day:"numeric",
+                  month:"long"
+                }
+              )}
+
           </div>
 
           <div class="big-day">
-            ${n>0 ? "День "+n : "До старта"}
+
+            ${
+              n>0
+              ? "День "+n
+              : "До старта"
+            }
+
           </div>
 
           <div class="muted">
-            Старт: ${fmtDate(u.startDate)}
+
+            Старт:
+            ${fmtDate(u.startDate)}
+
           </div>
+
         </div>
 
         <div style="text-align:right">
-          <div class="kpi">${s.pct}%</div>
+
+          <div class="kpi">
+            ${s.pct}%
+          </div>
+
           <div class="muted">
             ${s.done}/${s.total} задач
           </div>
+
         </div>
+
       </div>
 
       <div
         class="progress-track"
         style="margin-top:18px"
       >
+
         <div
           class="progress-fill"
           style="width:${s.pct}%"
         ></div>
+
       </div>
 
       <div class="stats">
+
         <div class="stat">
+
           🔥 Серия
-          <strong>${currentStreak()}</strong>
+
+          <strong>
+            ${currentStreak()}
+          </strong>
+
         </div>
 
         <div class="stat">
+
           📆 Дней
-          <strong>${challengeDays()}</strong>
+
+          <strong>
+            ${challengeDays()}
+          </strong>
+
         </div>
 
         <div class="stat">
+
           🏆 Лучшая
-          <strong>${bestStreak()}</strong>
+
+          <strong>
+            ${bestStreak()}
+          </strong>
+
         </div>
+
       </div>
+
     </div>
 
     <div class="card">
+
       <div class="row">
+
         <h2>Сегодня</h2>
 
         <span class="tag">
+
           ${
             yoga(today())
             ? "🧘 День йоги"
             : "🌿 Обычный день"
           }
+
         </span>
+
       </div>
 
       ${
         n<1
-        ? `<p class="muted">
-             Дата старта ещё не наступила.
-           </p>`
+
+        ? `
+          <p class="muted">
+            Дата старта ещё не наступила.
+          </p>
+        `
+
         : habitsFor(today())
-          .map(h=>habitHtml(h,today()))
+          .map(
+            h=>habitHtml(
+              h,
+              today()
+            )
+          )
           .join("")
       }
+
     </div>
 
     <div class="grid">
 
       <div class="card">
+
         <h2>🍽️ Питание</h2>
 
         <textarea
           id="meal"
           placeholder="Что сегодня ела?"
-        >${escapeHtml(dayData(today()).meal || "")}</textarea>
+        >${escapeHtml(
+          dayData(today()).meal || ""
+        )}</textarea>
 
         <button
           class="btn"
@@ -1032,15 +1919,19 @@ function renderToday(){
         >
           Сохранить питание
         </button>
+
       </div>
 
       <div class="card">
+
         <h2>📝 Заметка</h2>
 
         <textarea
           id="note"
           placeholder="Как прошёл день?"
-        >${escapeHtml(u.notes[today()] || "")}</textarea>
+        >${escapeHtml(
+          u.notes[today()] || ""
+        )}</textarea>
 
         <button
           class="btn"
@@ -1049,23 +1940,33 @@ function renderToday(){
         >
           Сохранить заметку
         </button>
+
       </div>
 
       <div class="card">
+
         <h2>⚙️ Настройки</h2>
 
         <p class="muted">
-          Дата старта: ${fmtDate(u.startDate)}
+
+          Дата старта:
+          ${fmtDate(u.startDate)}
+
         </p>
 
         <div class="field">
-          <label>Дата начала</label>
+
+          <label>
+            Дата начала
+          </label>
+
           <input
             class="input"
             id="startDate"
             type="date"
             value="${u.startDate}"
           >
+
         </div>
 
         <button
@@ -1074,109 +1975,135 @@ function renderToday(){
         >
           Изменить дату старта
         </button>
+
       </div>
 
     </div>
   `;
 }
 
-function habitHtml(h,date){
-  const d=dayData(date);
-  const checked=!!d.checks[h.id];
+function habitHtml(
+  h,
+  date
+){
+
+  const d=
+    dayData(date);
+
+  const checked=
+    !!d.checks[h.id];
 
   let extra="";
 
   if(h.id==="steps"){
+
     extra=`
+
       <input
         class="input"
         style="width:120px"
         type="number"
         placeholder="шаги"
         value="${d.steps || ""}"
-        onchange="setExtra('${date}','steps',this.value)"
+        onchange="
+          setExtra(
+            '${date}',
+            'steps',
+            this.value
+          )
+        "
       >
+
     `;
+
   }
 
   if(h.id==="book"){
+
     extra=`
+
       <input
         class="input"
         style="width:110px"
         type="number"
         placeholder="страниц"
         value="${d.pages || ""}"
-        onchange="setExtra('${date}','pages',this.value)"
+        onchange="
+          setExtra(
+            '${date}',
+            'pages',
+            this.value
+          )
+        "
       >
+
     `;
+
   }
 
-  if(h.id==="entertainment"){
+  if(
+    h.id==="entertainment"
+  ){
+
     extra=`
+
       <input
         class="input"
         style="width:110px"
         type="number"
         placeholder="минут"
         value="${d.minutes || ""}"
-        onchange="setExtra('${date}','minutes',this.value)"
+        onchange="
+          setExtra(
+            '${date}',
+            'minutes',
+            this.value
+          )
+        "
       >
+
     `;
+
   }
 
   return `
+
     <div class="habit">
 
       <input
         type="checkbox"
         ${checked?"checked":""}
-        onchange="toggleHabit(
-          '${date}',
-          '${h.id}',
-          this.checked
-        )"
+        onchange="
+          toggleHabit(
+            '${date}',
+            '${h.id}',
+            this.checked
+          )
+        "
       >
 
       <div style="flex:1">
+
         <div class="habit-title">
-          ${h.icon} ${h.title}
+
+          ${h.icon}
+          ${h.title}
+
         </div>
 
         <div class="habit-meta">
+
           ${h.meta}
+
         </div>
+
       </div>
 
       ${extra}
 
     </div>
+
   `;
-}
-
-/* =========================================================
-   START DATE
-========================================================= */
-
-async function changeStart(){
-  const v=document.getElementById("startDate").value;
-
-  if(!v) return;
-
-  /*
-    В текущей таблице goals у тебя нет start_date.
-    Поэтому дата старта пока хранится локально в памяти
-    текущего сеанса.
-
-    Если хочешь хранить её постоянно в Supabase,
-    добавим колонку start_date в goals следующим шагом.
-  */
-
-  user().startDate=v;
-
-  render();
-
-  toast("Дата старта обновлена");
 }
 
 /* =========================================================
@@ -1184,62 +2111,135 @@ async function changeStart(){
 ========================================================= */
 
 function renderCalendar(){
-  const y=calCursor.getFullYear();
-  const m=calCursor.getMonth();
 
-  const first=new Date(y,m,1);
-  const days=new Date(y,m+1,0).getDate();
+  const y=
+    calCursor.getFullYear();
 
-  const offset=(first.getDay()+6)%7;
+  const m=
+    calCursor.getMonth();
+
+  const first=
+    new Date(y,m,1);
+
+  const days=
+    new Date(
+      y,
+      m+1,
+      0
+    ).getDate();
+
+  const offset=
+    (first.getDay()+6)%7;
 
   let cells=[
-    "Пн","Вт","Ср","Чт","Пт","Сб","Вс"
-  ]
-  .map(x=>`<div class="weekday">${x}</div>`)
-  .join("");
 
-  for(let i=0;i<offset;i++){
-    cells+=`<div class="daycell out"></div>`;
+    "Пн",
+    "Вт",
+    "Ср",
+    "Чт",
+    "Пт",
+    "Сб",
+    "Вс"
+
+  ]
+    .map(
+      x=>`
+        <div class="weekday">
+          ${x}
+        </div>
+      `
+    )
+    .join("");
+
+  for(
+    let i=0;
+    i<offset;
+    i++
+  ){
+
+    cells+=`
+      <div class="daycell out"></div>
+    `;
+
   }
 
-  for(let d=1;d<=days;d++){
-    const date=iso(new Date(y,m,d));
+  for(
+    let d=1;
+    d<=days;
+    d++
+  ){
 
-    const st=eligible(date)
+    const date=
+      iso(
+        new Date(
+          y,
+          m,
+          d
+        )
+      );
+
+    const st=
+      eligible(date)
       ? statsFor(date)
       : null;
 
     let cls="daycell";
 
-    if(date===today()){
+    if(
+      date===today()
+    ){
       cls+=" current";
     }
 
-    if(st?.pct===100){
+    if(
+      st?.pct===100
+    ){
+
       cls+=" done";
-    }else if(st?.pct>0){
+
+    }else if(
+      st?.pct>0
+    ){
+
       cls+=" partial";
+
     }
 
     cells+=`
+
       <button
         class="${cls}"
-        onclick="openDay('${date}')"
+        onclick="
+          openDay('${date}')
+        "
       >
-        <div class="daynum">${d}</div>
+
+        <div class="daynum">
+          ${d}
+        </div>
 
         <div class="daystatus">
+
           ${
             st
-            ? `День ${dayNum(date)} · ${st.pct}%`
+            ? `
+              День ${dayNum(date)}
+              · ${st.pct}%
+            `
             : "до старта"
           }
+
         </div>
+
       </button>
+
     `;
   }
 
-  document.getElementById("view-calendar").innerHTML=`
+  document.getElementById(
+    "view-calendar"
+  ).innerHTML=`
+
     <div class="card">
 
       <div class="calendar-head">
@@ -1252,13 +2252,19 @@ function renderCalendar(){
         </button>
 
         <h2>
-          ${new Date(y,m,1).toLocaleDateString(
+
+          ${new Date(
+            y,
+            m,
+            1
+          ).toLocaleDateString(
             "ru-RU",
             {
               month:"long",
               year:"numeric"
             }
           )}
+
         </h2>
 
         <button
@@ -1271,14 +2277,21 @@ function renderCalendar(){
       </div>
 
       <div class="month-grid">
+
         ${cells}
+
       </div>
 
       <p
         class="muted"
         style="margin-bottom:0"
       >
-        🟢 100% · 🟡 частично · ⚪ пусто · 🔵 сегодня
+
+        🟢 100% ·
+        🟡 частично ·
+        ⚪ пусто ·
+        🔵 сегодня
+
       </p>
 
     </div>
@@ -1286,6 +2299,7 @@ function renderCalendar(){
 }
 
 function moveMonth(x){
+
   calCursor.setMonth(
     calCursor.getMonth()+x
   );
@@ -1294,12 +2308,20 @@ function moveMonth(x){
 }
 
 function openDay(date){
-  const st=statsFor(date);
-  const d=dayData(date);
+
+  const st=
+    statsFor(date);
+
+  const d=
+    dayData(date);
 
   openModal(`
+
     <h2>
-      ${fmtDate(date)} · День ${dayNum(date)}
+
+      ${fmtDate(date)}
+      · День ${dayNum(date)}
+
     </h2>
 
     <div class="kpi">
@@ -1307,34 +2329,61 @@ function openDay(date){
     </div>
 
     <p class="muted">
-      ${st.done}/${st.total} выполнено
+
+      ${st.done}/${st.total}
+      выполнено
+
     </p>
 
     ${
       habitsFor(date)
-      .map(h=>`
-        <div class="habit">
-          <span>
-            ${d.checks[h.id]?"✅":"○"}
-          </span>
+        .map(
+          h=>`
 
-          <div>
-            <b>
-              ${h.icon} ${h.title}
-            </b>
-          </div>
-        </div>
-      `)
-      .join("")
+            <div class="habit">
+
+              <span>
+
+                ${
+                  d.checks[h.id]
+                  ? "✅"
+                  : "○"
+                }
+
+              </span>
+
+              <div>
+
+                <b>
+
+                  ${h.icon}
+                  ${h.title}
+
+                </b>
+
+              </div>
+
+            </div>
+
+          `
+        )
+        .join("")
     }
 
-    <h3>📝 Заметка</h3>
+    <h3>
+      📝 Заметка
+    </h3>
 
     <p>
+
       ${escapeHtml(
-        user().notes[date] || "Нет заметки."
+        user().notes[date]
+        ||
+        "Нет заметки."
       )}
+
     </p>
+
   `);
 }
 
@@ -1343,37 +2392,62 @@ function openDay(date){
 ========================================================= */
 
 function renderProgress(){
-  const o=overall();
-  const a=initialWeight();
-  const b=lastWeight();
 
-  const rates=defaultHabits
-    .map(h=>`
-      <div class="metric-row">
+  const o=
+    overall();
 
-        <div>
-          ${h.icon} ${h.title}
-        </div>
+  const a=
+    initialWeight();
 
-        <div>
-          <b>${habitRate(h.id)}%</b>
-        </div>
+  const b=
+    lastWeight();
 
-        <div class="bar">
-          <i
-            style="width:${habitRate(h.id)}%"
-          ></i>
-        </div>
+  const rates=
+    defaultHabits
+      .map(
+        h=>`
 
-      </div>
-    `)
-    .join("");
+          <div class="metric-row">
 
-  document.getElementById("view-progress").innerHTML=`
+            <div>
+
+              ${h.icon}
+              ${h.title}
+
+            </div>
+
+            <div>
+
+              <b>
+                ${habitRate(h.id)}%
+              </b>
+
+            </div>
+
+            <div class="bar">
+
+              <i
+                style="
+                  width:${habitRate(h.id)}%
+                "
+              ></i>
+
+            </div>
+
+          </div>
+
+        `
+      )
+      .join("");
+
+  document.getElementById(
+    "view-progress"
+  ).innerHTML=`
 
     <div class="grid">
 
       <div class="card">
+
         <div class="muted">
           Среднее выполнение
         </div>
@@ -1383,42 +2457,64 @@ function renderProgress(){
         </div>
 
         <p>
-          ${o.full} полностью выполненных
+
+          ${o.full}
+          полностью выполненных
           дней из ${o.days}
+
         </p>
+
       </div>
 
       <div class="card">
+
         <div class="muted">
           Серия
         </div>
 
         <div class="kpi">
-          🔥 ${currentStreak()}
+
+          🔥
+          ${currentStreak()}
+
         </div>
 
         <p>
-          Лучшая: ${bestStreak()} дней
+
+          Лучшая:
+          ${bestStreak()}
+          дней
+
         </p>
+
       </div>
 
     </div>
 
     <div class="card">
-      <h2>📊 Привычки</h2>
+
+      <h2>
+        📊 Привычки
+      </h2>
 
       <div class="table-like">
+
         ${rates}
+
       </div>
+
     </div>
 
     <div class="card">
 
-      <h2>⚖️ Вес и замеры</h2>
+      <h2>
+        ⚖️ Вес и замеры
+      </h2>
 
       <div class="grid">
 
         <div>
+
           <div class="muted">
             Начальный вес
           </div>
@@ -1426,9 +2522,11 @@ function renderProgress(){
           <div class="kpi">
             ${a??"—"} кг
           </div>
+
         </div>
 
         <div>
+
           <div class="muted">
             Текущий вес
           </div>
@@ -1436,17 +2534,28 @@ function renderProgress(){
           <div class="kpi">
             ${b??"—"} кг
           </div>
+
         </div>
 
       </div>
 
       <p>
+
         ${
           a!=null && b!=null
-          ? `Результат:
-             <b>${(b-a).toFixed(1)} кг</b>`
-          : "Добавь первую запись веса."
+
+          ? `
+            Результат:
+            <b>
+              ${(b-a).toFixed(1)} кг
+            </b>
+          `
+
+          : `
+            Добавь первую запись веса.
+          `
         }
+
       </p>
 
       <button
@@ -1460,15 +2569,24 @@ function renderProgress(){
 
     <div class="card">
 
-      <h2>💄 Фонд красоты</h2>
+      <h2>
+        💄 Фонд красоты
+      </h2>
 
       <div class="kpi">
-        ${beautyFund().toLocaleString("ru-RU")} сом
+
+        ${beautyFund()
+          .toLocaleString("ru-RU")}
+
+        сом
+
       </div>
 
       <p class="muted">
+
         +1 000 сом за каждый полный
         потерянный килограмм.
+
       </p>
 
     </div>
@@ -1476,11 +2594,18 @@ function renderProgress(){
 }
 
 function weightModal(){
+
   openModal(`
-    <h2>⚖️ Еженедельный контроль</h2>
+
+    <h2>
+      ⚖️ Еженедельный контроль
+    </h2>
 
     <div class="field">
-      <label>Вес, кг</label>
+
+      <label>
+        Вес, кг
+      </label>
 
       <input
         id="w"
@@ -1488,28 +2613,38 @@ function weightModal(){
         type="number"
         step="0.1"
       >
+
     </div>
 
     <div class="grid">
 
       ${
-        ["Грудь","Талия","Живот","Бёдра"]
-        .map((x,i)=>`
-          <div class="field">
+        [
+          "Грудь",
+          "Талия",
+          "Живот",
+          "Бёдра"
+        ]
+        .map(
+          (x,i)=>`
 
-            <label>
-              ${x}, см
-            </label>
+            <div class="field">
 
-            <input
-              id="m${i}"
-              class="input"
-              type="number"
-              step="0.1"
-            >
+              <label>
+                ${x}, см
+              </label>
 
-          </div>
-        `)
+              <input
+                id="m${i}"
+                class="input"
+                type="number"
+                step="0.1"
+              >
+
+            </div>
+
+          `
+        )
         .join("")
       }
 
@@ -1521,6 +2656,7 @@ function weightModal(){
     >
       Сохранить
     </button>
+
   `);
 }
 
@@ -1529,13 +2665,20 @@ function weightModal(){
 ========================================================= */
 
 function renderRewards(){
-  const lost=lostKg();
-  const w=lastWeight();
-  const st=currentStreak();
+
+  const lost=
+    lostKg();
+
+  const w=
+    lastWeight();
+
+  const st=
+    currentStreak();
 
   let cards=[];
 
   const repeatDefs=[
+
     {
       type:"kg",
       value:5,
@@ -1543,6 +2686,7 @@ function renderRewards(){
       title:"Стоматолог или косметолог",
       label:"за каждые −5 кг"
     },
+
     {
       type:"kg",
       value:10,
@@ -1550,6 +2694,7 @@ function renderRewards(){
       title:"Читмил",
       label:"за каждые −10 кг"
     },
+
     {
       type:"streak",
       value:30,
@@ -1557,33 +2702,173 @@ function renderRewards(){
       title:"Бассейн / SPA",
       label:"за каждые 30 дней без срыва"
     }
+
   ];
 
-  repeatDefs.forEach(r=>{
-    const count=rewardCount(
-      r.type,
-      r.value
-    );
+  repeatDefs.forEach(
+    r=>{
 
-    for(
-      let i=1;
-      i<=Math.max(count,1);
-      i++
-    ){
-      const unlocked=i<=count;
+      const count=
+        rewardCount(
+          r.type,
+          r.value
+        );
 
-      const key=rewardKey(
-        r.type,
-        r.value,
-        i
-      );
+      for(
+        let i=1;
+        i<=Math.max(
+          count,
+          1
+        );
+        i++
+      ){
 
-      const claimed=!!user().rewards[key];
+        const unlocked=
+          i<=count;
+
+        const key=
+          rewardKey(
+            r.type,
+            r.value,
+            i
+          );
+
+        const claimed=
+          !!user().rewards[key];
+
+        cards.push(`
+
+          <div
+            class="
+              card
+              reward
+              ${unlocked
+                ?"unlocked"
+                :"locked"}
+            "
+          >
+
+            <div class="reward-icon">
+              ${r.icon}
+            </div>
+
+            <div style="flex:1">
+
+              <h3>
+
+                ${r.title}
+
+                ${
+                  i>1
+                  ? `№${i}`
+                  : ""
+                }
+
+              </h3>
+
+              <div class="muted">
+
+                ${r.label}
+
+                · порог
+                ${r.value*i}
+
+                ${
+                  r.type==="kg"
+                  ? " кг"
+                  : " дней"
+                }
+
+              </div>
+
+            </div>
+
+            <div>
+
+              ${
+                claimed
+                ? "☑️"
+                : unlocked
+                ? "🎉"
+                : "🔒"
+              }
+
+            </div>
+
+            ${
+              unlocked && !claimed
+
+              ? `
+
+                <button
+                  class="btn"
+                  onclick="
+                    claim('${key}')
+                  "
+                >
+                  Получена
+                </button>
+
+              `
+
+              : ""
+            }
+
+          </div>
+
+        `);
+
+      }
+
+    }
+  );
+
+  [
+
+    {
+      id:"75",
+      icon:"💋",
+      title:"Сделать губы",
+      rule:"Достичь 75 кг",
+      value:75
+    },
+
+    {
+      id:"65",
+      icon:"📸",
+      title:"Профессиональная фотосессия",
+      rule:"Достичь 65 кг",
+      value:65
+    },
+
+    {
+      id:"60",
+      icon:"✈️🛍️",
+      title:"Путешествие + шопинг",
+      rule:"Достичь 60 кг",
+      value:60
+    }
+
+  ].forEach(
+    r=>{
+
+      const unlocked=
+        w!=null &&
+        w<=r.value;
+
+      const claimed=
+        !!user().rewards[r.id];
 
       cards.push(`
+
         <div
-          class="card reward
-          ${unlocked?"unlocked":"locked"}"
+          class="
+            card
+            reward
+            ${unlocked
+              ?"unlocked"
+              :"locked"}
+          "
         >
 
           <div class="reward-icon">
@@ -1594,19 +2879,16 @@ function renderRewards(){
 
             <h3>
               ${r.title}
-              ${i>1?`№${i}`:""}
             </h3>
 
             <div class="muted">
-              ${r.label}
-              · порог
-              ${r.value*i}
-              ${r.type==="kg"?" кг":" дней"}
+              ${r.rule}
             </div>
 
           </div>
 
           <div>
+
             ${
               claimed
               ? "☑️"
@@ -1614,107 +2896,38 @@ function renderRewards(){
               ? "🎉"
               : "🔒"
             }
+
           </div>
 
           ${
-            unlocked&&!claimed
+            unlocked && !claimed
+
             ? `
+
               <button
                 class="btn"
-                onclick="claim('${key}')"
+                onclick="
+                  claim('${r.id}')
+                "
               >
                 Получена
               </button>
+
             `
+
             : ""
           }
 
         </div>
+
       `);
+
     }
-  });
+  );
 
-  [
-    {
-      id:"75",
-      icon:"💋",
-      title:"Сделать губы",
-      rule:"Достичь 75 кг",
-      value:75
-    },
-    {
-      id:"65",
-      icon:"📸",
-      title:"Профессиональная фотосессия",
-      rule:"Достичь 65 кг",
-      value:65
-    },
-    {
-      id:"60",
-      icon:"✈️🛍️",
-      title:"Путешествие + шопинг",
-      rule:"Достичь 60 кг",
-      value:60
-    }
-  ].forEach(r=>{
-
-    const unlocked=
-      w!=null &&
-      w<=r.value;
-
-    const claimed=
-      !!user().rewards[r.id];
-
-    cards.push(`
-      <div
-        class="card reward
-        ${unlocked?"unlocked":"locked"}"
-      >
-
-        <div class="reward-icon">
-          ${r.icon}
-        </div>
-
-        <div style="flex:1">
-
-          <h3>
-            ${r.title}
-          </h3>
-
-          <div class="muted">
-            ${r.rule}
-          </div>
-
-        </div>
-
-        <div>
-          ${
-            claimed
-            ? "☑️"
-            : unlocked
-            ? "🎉"
-            : "🔒"
-          }
-        </div>
-
-        ${
-          unlocked&&!claimed
-          ? `
-            <button
-              class="btn"
-              onclick="claim('${r.id}')"
-            >
-              Получена
-            </button>
-          `
-          : ""
-        }
-
-      </div>
-    `);
-  });
-
-  document.getElementById("view-rewards").innerHTML=`
+  document.getElementById(
+    "view-rewards"
+  ).innerHTML=`
 
     <div class="hero">
 
@@ -1723,22 +2936,34 @@ function renderRewards(){
       </div>
 
       <div class="kpi">
-        ${beautyFund().toLocaleString("ru-RU")} сом
+
+        ${beautyFund()
+          .toLocaleString("ru-RU")}
+
+        сом
+
       </div>
 
       <p class="muted">
-        Потеряно: ${lost.toFixed(1)} кг
+
+        Потеряно:
+        ${lost.toFixed(1)} кг
+
         · текущая серия:
         🔥 ${st} дней
+
       </p>
 
     </div>
 
     <h2 style="margin:20px 0 12px">
+
       🏆 Награды
+
     </h2>
 
     ${cards.join("")}
+
   `;
 }
 
@@ -1747,248 +2972,396 @@ function renderRewards(){
 ========================================================= */
 
 function renderUs(){
-  const old=activeUserId;
 
-  const cards=allUsers()
-    .map(u=>{
+  const old=
+    activeUserId;
 
-      const s=statsFor(today(),u.id);
-      const st=currentStreak(u.id);
-      const w=lastWeight(u.id);
-      const a=initialWeight(u.id);
+  const cards=
+    allUsers()
+      .map(
+        u=>{
 
-      const todayData=
-        u.days[today()] || {
-          checks:{},
-          steps:"",
-          pages:"",
-          minutes:"",
-          meal:""
-        };
+          const s=
+            statsFor(
+              today(),
+              u.id
+            );
 
-      const note=u.notes[today()] || "";
+          const st=
+            currentStreak(
+              u.id
+            );
 
-      const measures=
-        u.measurements.length
-        ? u.measurements[u.measurements.length-1]
-        : null;
+          const w=
+            lastWeight(
+              u.id
+            );
 
-      const habits=habitsForUser(u.id,today())
-        .map(h=>`
-          <div
-            class="habit"
-            style="padding:8px 0"
-          >
-            <span>
-              ${todayData.checks?.[h.id]
-                ?"✅"
-                :"○"}
-            </span>
+          const a=
+            initialWeight(
+              u.id
+            );
 
-            <div>
-              <b>
-                ${h.icon} ${h.title}
-              </b>
-            </div>
-          </div>
-        `)
-        .join("");
+          const todayData=
+            u.days[today()] || {
 
-      return `
-        <div class="card">
+              checks:{},
 
-          <div class="row">
+              steps:"",
 
-            <h2>${escapeHtml(u.name)}</h2>
+              pages:"",
 
-            <span class="tag">
-              ${u.id===old
-                ?"Ты"
-                :"Общий доступ"}
-            </span>
+              minutes:"",
 
-          </div>
+              meal:""
 
-          <div class="stats">
+            };
 
-            <div class="stat">
-              Сегодня
-              <strong>
-                ${s.done}/${s.total}
-              </strong>
-            </div>
+          const note=
+            u.notes[today()] || "";
 
-            <div class="stat">
-              Процент
-              <strong>
-                ${s.pct}%
-              </strong>
-            </div>
+          const measures=
+            u.measurements.length
+            ? u.measurements[
+                u.measurements.length-1
+              ]
+            : null;
 
-            <div class="stat">
-              Серия
-              <strong>
-                🔥 ${st}
-              </strong>
-            </div>
+          const habits=
+            habitsForUser(
+              u.id,
+              today()
+            )
+            .map(
+              h=>`
 
-          </div>
+                <div
+                  class="habit"
+                  style="padding:8px 0"
+                >
 
-          <div
-            class="grid"
-            style="margin-top:12px"
-          >
+                  <span>
 
-            <div class="stat">
+                    ${
+                      todayData
+                        .checks?.[h.id]
+                      ? "✅"
+                      : "○"
+                    }
 
-              <div class="muted">
-                ⚖️ Вес
+                  </span>
+
+                  <div>
+
+                    <b>
+
+                      ${h.icon}
+                      ${h.title}
+
+                    </b>
+
+                  </div>
+
+                </div>
+
+              `
+            )
+            .join("");
+
+          return `
+
+            <div class="card">
+
+              <div class="row">
+
+                <h2>
+                  ${escapeHtml(u.name)}
+                </h2>
+
+                <span class="tag">
+
+                  ${
+                    u.id===old
+                    ? "Ты"
+                    : "Общий доступ"
+                  }
+
+                </span>
+
               </div>
 
-              <strong>
-                ${w!=null?w+" кг":"—"}
-              </strong>
+              <div class="stats">
 
-              <small>
-                ${a!=null
-                  ?`старт ${a} кг`
-                  :"нет данных"}
-              </small>
+                <div class="stat">
 
-            </div>
+                  Сегодня
 
-            <div class="stat">
+                  <strong>
+                    ${s.done}/${s.total}
+                  </strong>
 
-              <div class="muted">
-                💄 Фонд
+                </div>
+
+                <div class="stat">
+
+                  Процент
+
+                  <strong>
+                    ${s.pct}%
+                  </strong>
+
+                </div>
+
+                <div class="stat">
+
+                  Серия
+
+                  <strong>
+                    🔥 ${st}
+                  </strong>
+
+                </div>
+
               </div>
 
-              <strong>
-                ${beautyFund(u.id)
-                  .toLocaleString("ru-RU")}
-                сом
-              </strong>
+              <div
+                class="grid"
+                style="margin-top:12px"
+              >
+
+                <div class="stat">
+
+                  <div class="muted">
+                    ⚖️ Вес
+                  </div>
+
+                  <strong>
+
+                    ${
+                      w!=null
+                      ? w+" кг"
+                      : "—"
+                    }
+
+                  </strong>
+
+                  <small>
+
+                    ${
+                      a!=null
+                      ? `старт ${a} кг`
+                      : "нет данных"
+                    }
+
+                  </small>
+
+                </div>
+
+                <div class="stat">
+
+                  <div class="muted">
+                    💄 Фонд
+                  </div>
+
+                  <strong>
+
+                    ${
+                      beautyFund(u.id)
+                        .toLocaleString(
+                          "ru-RU"
+                        )
+                    }
+
+                    сом
+
+                  </strong>
+
+                </div>
+
+              </div>
+
+              <details
+                style="margin-top:14px"
+              >
+
+                <summary>
+
+                  <b>
+                    📋 Привычки сегодня
+                  </b>
+
+                </summary>
+
+                ${habits}
+
+                ${
+                  todayData.steps
+
+                  ? `
+                    <p class="muted">
+
+                      👣 Шаги:
+                      ${todayData.steps}
+
+                    </p>
+                  `
+
+                  : ""
+                }
+
+                ${
+                  todayData.pages
+
+                  ? `
+                    <p class="muted">
+
+                      📖 Страниц:
+                      ${todayData.pages}
+
+                    </p>
+                  `
+
+                  : ""
+                }
+
+                ${
+                  todayData.minutes
+
+                  ? `
+                    <p class="muted">
+
+                      🎬 Развлекательный
+                      контент:
+                      ${todayData.minutes}
+                      мин
+
+                    </p>
+                  `
+
+                  : ""
+                }
+
+              </details>
+
+              <details
+                style="margin-top:12px"
+              >
+
+                <summary>
+
+                  <b>
+                    🍽️ Питание
+                  </b>
+
+                </summary>
+
+                <p>
+
+                  ${escapeHtml(
+                    todayData.meal ||
+                    "Сегодня ничего не записано."
+                  )}
+
+                </p>
+
+              </details>
+
+              <details
+                style="margin-top:12px"
+              >
+
+                <summary>
+
+                  <b>
+                    📝 Заметка за сегодня
+                  </b>
+
+                </summary>
+
+                <p>
+
+                  ${escapeHtml(
+                    note ||
+                    "Сегодня заметки нет."
+                  )}
+
+                </p>
+
+              </details>
+
+              <details
+                style="margin-top:12px"
+              >
+
+                <summary>
+
+                  <b>
+                    📏 Последние замеры
+                  </b>
+
+                </summary>
+
+                ${
+                  measures
+
+                  ? `
+                    <p>
+
+                      Грудь:
+                      ${measures.chest??"—"}
+                      см ·
+
+                      Талия:
+                      ${measures.waist??"—"}
+                      см ·
+
+                      Живот:
+                      ${measures.belly??"—"}
+                      см ·
+
+                      Бёдра:
+                      ${measures.hips??"—"}
+                      см
+
+                    </p>
+                  `
+
+                  : `
+                    <p>
+                      Замеры пока не внесены.
+                    </p>
+                  `
+                }
+
+              </details>
 
             </div>
 
-          </div>
+          `;
 
-          <details style="margin-top:14px">
+        }
+      )
+      .join("");
 
-            <summary>
-              <b>📋 Привычки сегодня</b>
-            </summary>
+  const currentGoals=
+    user().goals;
 
-            ${habits}
-
-            ${
-              todayData.steps
-              ? `<p class="muted">
-                   👣 Шаги:
-                   ${todayData.steps}
-                 </p>`
-              : ""
-            }
-
-            ${
-              todayData.pages
-              ? `<p class="muted">
-                   📖 Страниц:
-                   ${todayData.pages}
-                 </p>`
-              : ""
-            }
-
-            ${
-              todayData.minutes
-              ? `<p class="muted">
-                   🎬 Развлекательный контент:
-                   ${todayData.minutes} мин
-                 </p>`
-              : ""
-            }
-
-          </details>
-
-          <details style="margin-top:12px">
-
-            <summary>
-              <b>🍽️ Питание</b>
-            </summary>
-
-            <p>
-              ${escapeHtml(
-                todayData.meal ||
-                "Сегодня ничего не записано."
-              )}
-            </p>
-
-          </details>
-
-          <details style="margin-top:12px">
-
-            <summary>
-              <b>📝 Заметка за сегодня</b>
-            </summary>
-
-            <p>
-              ${escapeHtml(
-                note ||
-                "Сегодня заметки нет."
-              )}
-            </p>
-
-          </details>
-
-          <details style="margin-top:12px">
-
-            <summary>
-              <b>📏 Последние замеры</b>
-            </summary>
-
-            ${
-              measures
-              ? `
-                <p>
-                  Грудь:
-                  ${measures.chest??"—"} см ·
-
-                  Талия:
-                  ${measures.waist??"—"} см ·
-
-                  Живот:
-                  ${measures.belly??"—"} см ·
-
-                  Бёдра:
-                  ${measures.hips??"—"} см
-                </p>
-              `
-              : `
-                <p>
-                  Замеры пока не внесены.
-                </p>
-              `
-            }
-
-          </details>
-
-        </div>
-      `;
-    })
-    .join("");
-
-  const currentGoals=user().goals;
-
-  document.getElementById("view-us").innerHTML=`
+  document.getElementById(
+    "view-us"
+  ).innerHTML=`
 
     <div class="hero">
 
-      <h2>👯‍♀️ Мы вдвоём</h2>
+      <h2>
+        👯‍♀️ Мы вдвоём
+      </h2>
 
       <p class="muted">
+
         Здесь отображаются общие данные:
         вес, замеры, питание, заметки,
         привычки, серии и награды.
+
       </p>
 
     </div>
@@ -1997,7 +3370,9 @@ function renderUs(){
 
     <div class="card">
 
-      <h2>🎯 Цели</h2>
+      <h2>
+        🎯 Цели
+      </h2>
 
       <div class="field">
 
@@ -2006,31 +3381,46 @@ function renderUs(){
         </label>
 
         ${
-          ["Instagram","TikTok","Threads","Другое"]
-          .map(x=>`
-            <label
-              style="display:block;margin:7px 0"
-            >
+          [
+            "Instagram",
+            "TikTok",
+            "Threads",
+            "Другое"
+          ]
+          .map(
+            x=>`
 
-              <input
-                type="checkbox"
-                ${
-                  currentGoals.socials.includes(x)
-                  ?"checked"
-                  :""
-                }
-                onchange="
-                  toggleSocial(
-                    '${x}',
-                    this.checked
-                  )
+              <label
+                style="
+                  display:block;
+                  margin:7px 0
                 "
               >
 
-              ${x}
+                <input
+                  type="checkbox"
+                  ${
+                    currentGoals
+                      .socials
+                      .includes(x)
+                    ? "checked"
+                    : ""
+                  }
 
-            </label>
-          `)
+                  onchange="
+                    toggleSocial(
+                      '${x}',
+                      this.checked
+                    )
+                  "
+                >
+
+                ${x}
+
+              </label>
+
+            `
+          )
           .join("")
         }
 
@@ -2040,7 +3430,12 @@ function renderUs(){
 
         <input
           type="checkbox"
-          ${currentGoals.alcohol?"checked":""}
+          ${
+            currentGoals.alcohol
+            ? "checked"
+            : ""
+          }
+
           onchange="
             toggleGoal(
               'alcohol',
@@ -2050,8 +3445,10 @@ function renderUs(){
         >
 
         <span>
+
           🍷 Не употреблять алкоголь
           до Нового года
+
         </span>
 
       </label>
@@ -2060,7 +3457,12 @@ function renderUs(){
 
         <input
           type="checkbox"
-          ${currentGoals.vision?"checked":""}
+          ${
+            currentGoals.vision
+            ? "checked"
+            : ""
+          }
+
           onchange="
             toggleGoal(
               'vision',
@@ -2070,7 +3472,9 @@ function renderUs(){
         >
 
         <span>
+
           🗺️ Сделать карту желаний
+
         </span>
 
       </label>
@@ -2079,7 +3483,12 @@ function renderUs(){
 
         <input
           type="checkbox"
-          ${currentGoals.wishlist?"checked":""}
+          ${
+            currentGoals.wishlist
+            ? "checked"
+            : ""
+          }
+
           onchange="
             toggleGoal(
               'wishlist',
@@ -2089,7 +3498,9 @@ function renderUs(){
         >
 
         <span>
+
           📝 Составить список желаний
+
         </span>
 
       </label>
@@ -2098,29 +3509,17 @@ function renderUs(){
   `;
 }
 
-function habitsForUser(userId,date){
-  const n=dayNumFor(userId,date);
-
-  return [
-    ...defaultHabits,
-    ...(n>=1 && n%2===1
-      ? [{
-          id:"yoga",
-          icon:"🧘",
-          title:"Йога 15 минут",
-          meta:"Сегодня день йоги"
-        }]
-      : [])
-  ];
-}
-
 /* =========================================================
    PROFILE
 ========================================================= */
 
 function openProfile(){
+
   openModal(`
-    <h2>👤 Профиль</h2>
+
+    <h2>
+      👤 Профиль
+    </h2>
 
     <p>
       Выбери пользователя.
@@ -2128,25 +3527,36 @@ function openProfile(){
 
     ${
       Object.keys(USER_NAMES)
-      .map(id=>`
-        <button
-          class="btn ${
-            id===activeUserId
-            ?""
-            :"secondary"
-          }"
-          style="
-            width:100%;
-            margin:6px 0
-          "
-          onclick="
-            switchUser('${id}')
-          "
-        >
-          ${USER_NAMES[id]}
-        </button>
-      `)
-      .join("")
+        .map(
+          id=>`
+
+            <button
+              class="
+                btn
+                ${
+                  id===activeUserId
+                  ? ""
+                  : "secondary"
+                }
+              "
+
+              style="
+                width:100%;
+                margin:6px 0
+              "
+
+              onclick="
+                switchUser('${id}')
+              "
+            >
+
+              ${USER_NAMES[id]}
+
+            </button>
+
+          `
+        )
+        .join("")
     }
 
     <hr>
@@ -2158,21 +3568,18 @@ function openProfile(){
     >
       Выйти
     </button>
+
   `);
 }
 
 function switchUser(id){
-  /*
-    Переключение профиля внутри общего экрана.
-    Вход в аккаунт остаётся привязанным
-    к реальному пользователю Supabase.
-  */
 
   if(!users[id]) return;
 
   activeUserId=id;
 
   closeModal();
+
   render();
 }
 
@@ -2181,12 +3588,25 @@ function switchUser(id){
 ========================================================= */
 
 function openModal(html){
-  document.getElementById("modalContent").innerHTML=html;
-  document.getElementById("modal").classList.remove("hidden");
+
+  document.getElementById(
+    "modalContent"
+  ).innerHTML=html;
+
+  document.getElementById(
+    "modal"
+  ).classList.remove(
+    "hidden"
+  );
 }
 
 function closeModal(){
-  document.getElementById("modal").classList.add("hidden");
+
+  document.getElementById(
+    "modal"
+  ).classList.add(
+    "hidden"
+  );
 }
 
 /* =========================================================
@@ -2194,36 +3614,72 @@ function closeModal(){
 ========================================================= */
 
 function setupEvents(){
-  const modalClose=document.getElementById("modalClose");
+
+  const modalClose=
+    document.getElementById(
+      "modalClose"
+    );
 
   if(modalClose){
-    modalClose.onclick=closeModal;
+
+    modalClose.onclick=
+      closeModal;
+
   }
 
-  const modal=document.getElementById("modal");
+  const modal=
+    document.getElementById(
+      "modal"
+    );
 
   if(modal){
-    modal.addEventListener("click",e=>{
-      if(e.target.id==="modal"){
-        closeModal();
+
+    modal.addEventListener(
+      "click",
+      e=>{
+
+        if(
+          e.target.id==="modal"
+        ){
+
+          closeModal();
+
+        }
+
       }
-    });
+    );
+
   }
 
   document
-    .querySelectorAll(".nav-item")
-    .forEach(b=>{
-      b.onclick=()=>{
-        currentView=b.dataset.view;
-        render();
-      };
-    });
+    .querySelectorAll(
+      ".nav-item"
+    )
+    .forEach(
+      b=>{
+
+        b.onclick=()=>{
+
+          currentView=
+            b.dataset.view;
+
+          render();
+
+        };
+
+      }
+    );
 
   const profileBtn=
-    document.getElementById("profileBtn");
+    document.getElementById(
+      "profileBtn"
+    );
 
   if(profileBtn){
-    profileBtn.onclick=openProfile;
+
+    profileBtn.onclick=
+      openProfile;
+
   }
 }
 
@@ -2232,6 +3688,9 @@ function setupEvents(){
 ========================================================= */
 
 (async function(){
+
   setupEvents();
+
   await init();
+
 })();

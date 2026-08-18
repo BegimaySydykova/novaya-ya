@@ -92,6 +92,8 @@ let profiles = {};
 let currentView = "today";
 let calCursor = new Date();
 
+let authLoading = false;
+
 /* =========================================================
    HELPERS
 ========================================================= */
@@ -123,8 +125,12 @@ function iso(d) {
 function fmtDate(s) {
   if (!s) return "—";
 
+  const normalized = normalizeStartDate(s);
+
+  if (!normalized) return "—";
+
   return new Date(
-    s + "T00:00:00"
+    normalized + "T00:00:00"
   ).toLocaleDateString(
     "ru-RU",
     {
@@ -164,10 +170,12 @@ function escapeHtml(value) {
 }
 
 /*
-  Дата всегда хранится в формате YYYY-MM-DD.
+  ВАЖНО:
 
-  Никаких автоматических дат.
-  Никакого 20 числа.
+  start_date теперь хранится ТОЛЬКО в goals.
+
+  Никаких значений по умолчанию.
+  Никакого 20-го числа.
 */
 
 function normalizeStartDate(value) {
@@ -176,14 +184,45 @@ function normalizeStartDate(value) {
   const str = String(value).trim();
 
   const match = str.match(
-    /^(\d{4})-(\d{2})-(\d{2})$/
+    /^(\d{4})-(\d{2})-(\d{2})/
   );
 
-  if (!match) {
+  if (!match) return null;
+
+  const result =
+    `${match[1]}-${match[2]}-${match[3]}`;
+
+  const test =
+    new Date(result + "T00:00:00");
+
+  if (
+    isNaN(test.getTime()) ||
+    iso(test) !== result
+  ) {
     return null;
   }
 
-  return `${match[1]}-${match[2]}-${match[3]}`;
+  return result;
+}
+
+function ensureDayObject(userId, date) {
+  if (!users[userId]) return null;
+
+  if (!users[userId].days[date]) {
+    users[userId].days[date] = {
+      checks: {},
+      steps: "",
+      pages: "",
+      minutes: "",
+      meal: ""
+    };
+  }
+
+  if (!users[userId].days[date].checks) {
+    users[userId].days[date].checks = {};
+  }
+
+  return users[userId].days[date];
 }
 
 /* =========================================================
@@ -206,20 +245,15 @@ async function init() {
       return;
     }
 
-    currentAuthUserId =
-      session.user.id;
+    currentAuthUserId = session.user.id;
 
     await loadAllData();
 
     const profile =
       Object.values(profiles).find(
         p =>
-          String(
-            p.auth_user_id || ""
-          ).trim() ===
-          String(
-            currentAuthUserId
-          ).trim()
+          String(p.auth_user_id || "").trim() ===
+          String(currentAuthUserId).trim()
       );
 
     if (!profile) {
@@ -235,15 +269,6 @@ async function init() {
             в таблице profiles.
           </p>
 
-          <p>
-            auth_user_id:
-            <b>
-              ${escapeHtml(
-                currentAuthUserId
-              )}
-            </b>
-          </p>
-
           <button
             onclick="logout()"
             class="btn"
@@ -256,25 +281,21 @@ async function init() {
       return;
     }
 
-    activeUserId =
-      profile.id;
+    activeUserId = profile.id;
 
     /*
-      ВАЖНО:
-
-      startDate уже загружен из goals
-      внутри loadAllData().
-
-      Здесь НЕ трогаем его.
+      Дата старта уже была загружена
+      из goals.start_date внутри loadAllData().
     */
 
     render();
 
   } catch (error) {
-    console.error(error);
+    console.error("INIT ERROR:", error);
 
     renderLogin(
-      error.message
+      error?.message ||
+      "Не удалось загрузить приложение"
     );
   }
 }
@@ -297,9 +318,7 @@ function renderLogin(error = "") {
         background:#fffdf9;
         border-radius:24px;
         padding:30px;
-        box-shadow:
-          0 12px 35px
-          rgba(66,48,35,.08);
+        box-shadow:0 12px 35px rgba(66,48,35,.08);
       ">
 
         <div style="
@@ -329,6 +348,7 @@ function renderLogin(error = "") {
             id="loginEmail"
             class="input"
             type="email"
+            autocomplete="username"
             placeholder="Введите email"
           >
 
@@ -345,12 +365,14 @@ function renderLogin(error = "") {
             id="loginPassword"
             class="input"
             type="password"
+            autocomplete="current-password"
             placeholder="Введите пароль"
           >
 
         </div>
 
         <button
+          id="loginBtn"
           class="btn"
           style="
             width:100%;
@@ -386,9 +408,37 @@ function renderLogin(error = "") {
       </div>
     </div>
   `;
+
+  setTimeout(() => {
+    const password =
+      document.getElementById("loginPassword");
+
+    if (password) {
+      password.addEventListener(
+        "keydown",
+        event => {
+          if (event.key === "Enter") {
+            login();
+          }
+        }
+      );
+    }
+  }, 0);
 }
 
+/*
+  ИСПРАВЛЕНИЕ ЛОГИНА.
+
+  После signInWithPassword мы НЕ запускаем
+  второй параллельный процесс через auth listener.
+
+  Здесь просто получаем сессию,
+  загружаем данные и открываем приложение.
+*/
+
 async function login() {
+  if (authLoading) return;
+
   const email =
     document
       .getElementById("loginEmail")
@@ -405,6 +455,16 @@ async function login() {
     return;
   }
 
+  authLoading = true;
+
+  const btn =
+    document.getElementById("loginBtn");
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Входим...";
+  }
+
   try {
     const {
       data,
@@ -418,63 +478,93 @@ async function login() {
       throw error;
     }
 
+    if (!data?.user || !data?.session) {
+      throw new Error(
+        "Сессия не была создана"
+      );
+    }
+
     currentAuthUserId =
       data.user.id;
+
+    /*
+      ВАЖНО:
+
+      loadAllData вызывается только здесь.
+      onAuthStateChange больше НЕ вызывает init().
+    */
 
     await loadAllData();
 
     const profile =
       Object.values(profiles).find(
         p =>
-          String(
-            p.auth_user_id || ""
-          ).trim() ===
-          String(
-            currentAuthUserId
-          ).trim()
+          String(p.auth_user_id || "").trim() ===
+          String(currentAuthUserId).trim()
       );
 
     if (!profile) {
       await sb.auth.signOut();
 
-      toast(
-        "Для этого аккаунта нет профиля"
+      throw new Error(
+        "Для этого аккаунта не найден профиль"
       );
-
-      return;
     }
 
     activeUserId =
       profile.id;
 
-    /*
-      startDate уже взят из goals
-      внутри loadAllData().
-    */
-
     render();
 
   } catch (error) {
-    console.error(error);
+    console.error("LOGIN ERROR:", error);
 
-    toast(
-      "Ошибка входа: " +
-      error.message
+    renderLogin(
+      error?.message ||
+      "Ошибка входа"
     );
+
+  } finally {
+    authLoading = false;
   }
 }
 
 async function logout() {
-  await sb.auth.signOut();
+  try {
+    await sb.auth.signOut();
+  } catch (error) {
+    console.error(error);
+  }
+
+  currentAuthUserId = null;
+  activeUserId = null;
+  users = {};
+  profiles = {};
 
   location.reload();
 }
 
+/*
+  ВАЖНО:
+
+  SIGNED_IN здесь НЕ запускает init().
+  Это устраняет гонку при входе.
+*/
+
 sb.auth.onAuthStateChange(
   event => {
+
     if (event === "SIGNED_OUT") {
+
+      currentAuthUserId = null;
+      activeUserId = null;
+
+      users = {};
+      profiles = {};
+
       location.reload();
     }
+
   }
 );
 
@@ -495,8 +585,8 @@ function emptyUser(profile) {
       null,
 
     /*
-      Дата будет заполнена
-      исключительно из goals.start_date.
+      startDate будет установлен
+      из goals.start_date после загрузки goals.
     */
 
     startDate: null,
@@ -528,10 +618,9 @@ function emptyUser(profile) {
 async function loadAllData() {
 
   /*
-    1. Загружаем profiles.
+    1. PROFILES
 
-    ВНИМАНИЕ:
-    profiles больше НЕ содержит start_date.
+    Здесь НИЧЕГО не читаем про start_date.
   */
 
   const profilesResult =
@@ -540,10 +629,6 @@ async function loadAllData() {
       .select("*");
 
   if (profilesResult.error) {
-    console.error(
-      profilesResult.error
-    );
-
     throw profilesResult.error;
   }
 
@@ -576,7 +661,7 @@ async function loadAllData() {
   }
 
   /*
-    2. Загружаем ВСЕ остальные таблицы.
+    2. ОСТАЛЬНЫЕ ТАБЛИЦЫ
   */
 
   const [
@@ -617,7 +702,6 @@ async function loadAllData() {
       .from("weights")
       .select("*")
       .in("user_id", ids)
-
   ]);
 
   const results = [
@@ -633,17 +717,13 @@ async function loadAllData() {
     const result of results
   ) {
     if (result.error) {
-      console.error(
-        result.error
-      );
-
       throw result.error;
     }
   }
 
-  /* =======================================================
+  /* =====================================================
      DAYS
-  ======================================================= */
+  ===================================================== */
 
   for (
     const row of
@@ -676,9 +756,11 @@ async function loadAllData() {
       };
   }
 
-  /* =======================================================
-     GOALS + START DATE
-  ======================================================= */
+  /* =====================================================
+     GOALS
+
+     start_date теперь ТОЛЬКО ЗДЕСЬ.
+  ===================================================== */
 
   for (
     const row of
@@ -694,44 +776,38 @@ async function loadAllData() {
         row.start_date
       );
 
-    users[row.user_id]
-      .goals = {
+    users[row.user_id].goals = {
 
-        socials:
-          Array.isArray(
-            row.socials
-          )
-            ? row.socials
-            : [],
+      socials:
+        Array.isArray(row.socials)
+          ? row.socials
+          : [],
 
-        alcohol:
-          !!row.alcohol,
+      alcohol:
+        !!row.alcohol,
 
-        wishlist:
-          !!row.wishlist,
+      wishlist:
+        !!row.wishlist,
 
-        vision:
-          !!row.vision,
+      vision:
+        !!row.vision,
 
-        start_date:
-          startDate
-      };
+      start_date:
+        startDate
+    };
 
     /*
-      КЛЮЧЕВАЯ СТРОКА.
-
-      Дата старта берётся
-      только из goals.start_date.
+      Единственное место,
+      откуда users.startDate получает значение.
     */
 
-    users[row.user_id]
-      .startDate =
-        startDate;
+    users[row.user_id].startDate =
+      startDate;
   }
 
-  /* =======================================================
+  /* =====================================================
      MEASUREMENTS
-  ======================================================= */
+  ===================================================== */
 
   for (
     const row of
@@ -765,9 +841,9 @@ async function loadAllData() {
       });
   }
 
-  /* =======================================================
+  /* =====================================================
      NOTES
-  ======================================================= */
+  ===================================================== */
 
   for (
     const row of
@@ -780,12 +856,12 @@ async function loadAllData() {
 
     users[row.user_id]
       .notes[row.note_date] =
-        row.text || "";
+      row.text || "";
   }
 
-  /* =======================================================
+  /* =====================================================
      REWARDS
-  ======================================================= */
+  ===================================================== */
 
   for (
     const row of
@@ -798,12 +874,12 @@ async function loadAllData() {
 
     users[row.user_id]
       .rewards[row.reward_key] =
-        true;
+      true;
   }
 
-  /* =======================================================
+  /* =====================================================
      WEIGHTS
-  ======================================================= */
+  ===================================================== */
 
   for (
     const row of
@@ -818,8 +894,7 @@ async function loadAllData() {
       .weights
       .push({
 
-        id:
-          row.id,
+        id: row.id,
 
         date:
           row.record_date,
@@ -829,9 +904,9 @@ async function loadAllData() {
       });
   }
 
-  /* =======================================================
+  /* =====================================================
      SORT
-  ======================================================= */
+  ===================================================== */
 
   for (
     const id of ids
@@ -841,18 +916,14 @@ async function loadAllData() {
       .measurements
       .sort(
         (a, b) =>
-          a.date.localeCompare(
-            b.date
-          )
+          a.date.localeCompare(b.date)
       );
 
     users[id]
       .weights
       .sort(
         (a, b) =>
-          a.date.localeCompare(
-            b.date
-          )
+          a.date.localeCompare(b.date)
       );
   }
 }
@@ -861,14 +932,10 @@ async function loadAllData() {
    DAYS
 ========================================================= */
 
-function dayNumFor(
-  userId,
-  date
-) {
+function dayNumFor(userId, date) {
 
   const start =
-    users[userId]
-      ?.startDate;
+    users[userId]?.startDate;
 
   if (!start) {
     return 0;
@@ -876,20 +943,17 @@ function dayNumFor(
 
   const startDate =
     new Date(
-      start +
-      "T00:00:00"
+      start + "T00:00:00"
     );
 
   const d =
     new Date(
-      date +
-      "T00:00:00"
+      date + "T00:00:00"
     );
 
   return Math.floor(
-    (
-      d - startDate
-    ) / 86400000
+    (d - startDate) /
+    86400000
   ) + 1;
 }
 
@@ -906,17 +970,15 @@ function eligible(date) {
 
 function dayData(date) {
 
-  return (
-    users[activeUserId]
-      ?.days?.[date]
-    || {
+  return users[activeUserId]
+    ?.days?.[date] || {
+
       checks: {},
       steps: "",
       pages: "",
       minutes: "",
       meal: ""
-    }
-  );
+    };
 }
 
 function yoga(date) {
@@ -940,10 +1002,8 @@ function habitsFor(date) {
           {
             id: "yoga",
             icon: "🧘",
-            title:
-              "Йога 15 минут",
-            meta:
-              "Сегодня день йоги"
+            title: "Йога 15 минут",
+            meta: "Сегодня день йоги"
           }
         ]
       : [])
@@ -964,16 +1024,13 @@ function habitsForUser(
   return [
     ...defaultHabits,
 
-    ...(n >= 1 &&
-    n % 2 === 1
+    ...(n >= 1 && n % 2 === 1
       ? [
           {
             id: "yoga",
             icon: "🧘",
-            title:
-              "Йога 15 минут",
-            meta:
-              "Сегодня день йоги"
+            title: "Йога 15 минут",
+            meta: "Сегодня день йоги"
           }
         ]
       : [])
@@ -985,9 +1042,17 @@ function statsFor(
   userId = activeUserId
 ) {
 
+  /*
+    ВАЖНО:
+
+    statsFor по умолчанию использует
+    ТОЛЬКО activeUserId.
+
+    Общие данные сюда не попадают.
+  */
+
   const d =
-    users[userId]
-      ?.days?.[date]
+    users[userId]?.days?.[date]
     || {
       checks: {}
     };
@@ -1001,23 +1066,18 @@ function statsFor(
   const hs = [
     ...defaultHabits,
 
-    ...(n >= 1 &&
-    n % 2 === 1
-      ? [
-          {
-            id: "yoga"
-          }
-        ]
+    ...(n >= 1 && n % 2 === 1
+      ? [{ id: "yoga" }]
       : [])
   ];
 
   const done =
     hs.filter(
-      h =>
-        d.checks?.[h.id]
+      h => !!d.checks?.[h.id]
     ).length;
 
   return {
+
     done,
 
     total:
@@ -1034,15 +1094,20 @@ function statsFor(
   };
 }
 
-function challengeDays() {
+function challengeDays(
+  userId = activeUserId
+) {
 
-  if (!user()?.startDate) {
+  const start =
+    users[userId]?.startDate;
+
+  if (!start) {
     return 0;
   }
 
-  const start =
+  const startDate =
     new Date(
-      user().startDate +
+      start +
       "T00:00:00"
     );
 
@@ -1052,14 +1117,14 @@ function challengeDays() {
       "T00:00:00"
     );
 
-  return Math.max(
-    0,
-    Math.floor(
-      (
-        now - start
-      ) / 86400000
-    ) + 1
-  );
+  if (now < startDate) {
+    return 0;
+  }
+
+  return Math.floor(
+    (now - startDate) /
+    86400000
+  ) + 1;
 }
 
 function currentStreak(
@@ -1122,8 +1187,7 @@ function bestStreak(
   let run = 0;
 
   const start =
-    users[userId]
-      ?.startDate;
+    users[userId]?.startDate;
 
   if (!start) {
     return 0;
@@ -1141,9 +1205,12 @@ function bestStreak(
       "T00:00:00"
     );
 
+  if (end < startDate) {
+    return 0;
+  }
+
   for (
-    let d =
-      new Date(startDate);
+    let d = new Date(startDate);
     d <= end;
     d.setDate(
       d.getDate() + 1
@@ -1184,8 +1251,7 @@ function overall(
   let full = 0;
 
   const start =
-    users[userId]
-      ?.startDate;
+    users[userId]?.startDate;
 
   if (!start) {
     return {
@@ -1207,9 +1273,16 @@ function overall(
       "T00:00:00"
     );
 
+  if (end < startDate) {
+    return {
+      days: 0,
+      avg: 0,
+      full: 0
+    };
+  }
+
   for (
-    let d =
-      new Date(startDate);
+    let d = new Date(startDate);
     d <= end;
     d.setDate(
       d.getDate() + 1
@@ -1233,14 +1306,12 @@ function overall(
 
   return {
 
-    days:
-      total,
+    days: total,
 
     avg:
       total
         ? Math.round(
-            sum /
-            total
+            sum / total
           )
         : 0,
 
@@ -1257,14 +1328,11 @@ function lastWeight(
 ) {
 
   const arr =
-    users[userId]
-      ?.weights || [];
+    users[userId]?.weights || [];
 
   return arr.length
     ? Number(
-        arr[
-          arr.length - 1
-        ].value
+        arr[arr.length - 1].value
       )
     : null;
 }
@@ -1274,8 +1342,7 @@ function initialWeight(
 ) {
 
   const arr =
-    users[userId]
-      ?.weights || [];
+    users[userId]?.weights || [];
 
   return arr.length
     ? Number(
@@ -1322,8 +1389,7 @@ function habitRate(
 ) {
 
   const start =
-    users[userId]
-      ?.startDate;
+    users[userId]?.startDate;
 
   if (!start) {
     return 0;
@@ -1341,12 +1407,15 @@ function habitRate(
       "T00:00:00"
     );
 
+  if (end < startDate) {
+    return 0;
+  }
+
   let total = 0;
   let done = 0;
 
   for (
-    let d =
-      new Date(startDate);
+    let d = new Date(startDate);
     d <= end;
     d.setDate(
       d.getDate() + 1
@@ -1365,20 +1434,14 @@ function habitRate(
     const hs = [
       ...defaultHabits,
 
-      ...(n >= 1 &&
-      n % 2 === 1
-        ? [
-            {
-              id: "yoga"
-            }
-          ]
+      ...(n >= 1 && n % 2 === 1
+        ? [{ id: "yoga" }]
         : [])
     ];
 
     if (
       hs.some(
-        h =>
-          h.id === id
+        h => h.id === id
       )
     ) {
 
@@ -1471,8 +1534,7 @@ async function saveDay(date) {
   users[activeUserId]
     .days[date] = {
 
-      id:
-        data.id,
+      id: data.id,
 
       checks:
         data.checks || {},
@@ -1499,40 +1561,16 @@ async function toggleHabit(
   val
 ) {
 
-  if (
-    !users[activeUserId]
-      .days[date]
-  ) {
+  const d =
+    ensureDayObject(
+      activeUserId,
+      date
+    );
 
-    users[activeUserId]
-      .days[date] = {
+  if (!d) return;
 
-        checks: {},
-
-        steps: "",
-
-        pages: "",
-
-        minutes: "",
-
-        meal: ""
-      };
-  }
-
-  if (
-    !users[activeUserId]
-      .days[date]
-      .checks
-  ) {
-
-    users[activeUserId]
-      .days[date]
-      .checks = {};
-  }
-
-  users[activeUserId]
-    .days[date]
-    .checks[id] = val;
+  d.checks[id] =
+    val;
 
   const ok =
     await saveDay(date);
@@ -1548,28 +1586,15 @@ async function setExtra(
   val
 ) {
 
-  if (
-    !users[activeUserId]
-      .days[date]
-  ) {
+  const d =
+    ensureDayObject(
+      activeUserId,
+      date
+    );
 
-    users[activeUserId]
-      .days[date] = {
+  if (!d) return;
 
-        checks: {},
-
-        steps: "",
-
-        pages: "",
-
-        minutes: "",
-
-        meal: ""
-      };
-  }
-
-  users[activeUserId]
-    .days[date][key] = val;
+  d[key] = val;
 
   await saveDay(date);
 
@@ -1579,38 +1604,20 @@ async function setExtra(
 async function saveMeal() {
 
   const input =
-    document.getElementById(
-      "meal"
-    );
+    document.getElementById("meal");
 
   if (!input) return;
 
-  const value =
+  const d =
+    ensureDayObject(
+      activeUserId,
+      today()
+    );
+
+  if (!d) return;
+
+  d.meal =
     input.value;
-
-  if (
-    !users[activeUserId]
-      .days[today()]
-  ) {
-
-    users[activeUserId]
-      .days[today()] = {
-
-        checks: {},
-
-        steps: "",
-
-        pages: "",
-
-        minutes: "",
-
-        meal: ""
-      };
-  }
-
-  users[activeUserId]
-    .days[today()]
-    .meal = value;
 
   if (
     await saveDay(today())
@@ -1629,9 +1636,7 @@ async function saveMeal() {
 async function saveNote() {
 
   const input =
-    document.getElementById(
-      "note"
-    );
+    document.getElementById("note");
 
   if (!input) return;
 
@@ -1671,7 +1676,7 @@ async function saveNote() {
 
   users[activeUserId]
     .notes[today()] =
-      text;
+    text;
 
   toast(
     "Заметка сохранена ✨"
@@ -1687,6 +1692,11 @@ async function saveGoals() {
   const g =
     user().goals;
 
+  const startDate =
+    normalizeStartDate(
+      g.start_date
+    );
+
   const {
     data,
     error
@@ -1698,11 +1708,7 @@ async function saveGoals() {
           activeUserId,
 
         socials:
-          Array.isArray(
-            g.socials
-          )
-            ? g.socials
-            : [],
+          g.socials || [],
 
         alcohol:
           !!g.alcohol,
@@ -1714,9 +1720,10 @@ async function saveGoals() {
           !!g.vision,
 
         start_date:
-          normalizeStartDate(
-            g.start_date
-          )
+          startDate,
+
+        updated_at:
+          new Date().toISOString()
       },
       {
         onConflict:
@@ -1729,7 +1736,7 @@ async function saveGoals() {
   if (error) {
 
     console.error(
-      "Ошибка сохранения goals:",
+      "GOALS SAVE ERROR:",
       error
     );
 
@@ -1749,32 +1756,28 @@ async function saveGoals() {
       data.start_date
     );
 
-  users[activeUserId]
-    .goals = {
+  user().goals = {
 
-      socials:
-        Array.isArray(
-          data.socials
-        )
-          ? data.socials
-          : [],
+    socials:
+      Array.isArray(data.socials)
+        ? data.socials
+        : [],
 
-      alcohol:
-        !!data.alcohol,
+    alcohol:
+      !!data.alcohol,
 
-      wishlist:
-        !!data.wishlist,
+    wishlist:
+      !!data.wishlist,
 
-      vision:
-        !!data.vision,
+    vision:
+      !!data.vision,
 
-      start_date:
-        savedDate
-    };
+    start_date:
+      savedDate
+  };
 
-  users[activeUserId]
-    .startDate =
-      savedDate;
+  user().startDate =
+    savedDate;
 
   return true;
 }
@@ -1791,7 +1794,6 @@ async function toggleSocial(
     checked &&
     !arr.includes(value)
   ) {
-
     arr.push(value);
   }
 
@@ -1801,10 +1803,7 @@ async function toggleSocial(
       arr.indexOf(value);
 
     if (index >= 0) {
-      arr.splice(
-        index,
-        1
-      );
+      arr.splice(index, 1);
     }
   }
 
@@ -1833,9 +1832,7 @@ async function toggleGoal(
 async function changeStart() {
 
   if (!activeUserId) {
-    toast(
-      "Пользователь не выбран"
-    );
+    toast("Пользователь не выбран");
     return;
   }
 
@@ -1845,9 +1842,7 @@ async function changeStart() {
     );
 
   if (!input) {
-    toast(
-      "Поле даты не найдено"
-    );
+    toast("Поле даты не найдено");
     return;
   }
 
@@ -1857,15 +1852,15 @@ async function changeStart() {
     );
 
   if (!value) {
-    toast(
-      "Выбери дату"
-    );
+    toast("Выбери дату");
     return;
   }
 
   /*
-    Дата старта хранится ТОЛЬКО
-    в goals.start_date.
+    ВАЖНО:
+
+    Сохраняем дату ТОЛЬКО в goals.
+    profiles вообще не используется.
   */
 
   const {
@@ -1891,7 +1886,10 @@ async function changeStart() {
           !!user().goals.vision,
 
         start_date:
-          value
+          value,
+
+        updated_at:
+          new Date().toISOString()
       },
       {
         onConflict:
@@ -1904,7 +1902,7 @@ async function changeStart() {
   if (error) {
 
     console.error(
-      "Ошибка сохранения даты:",
+      "START DATE ERROR:",
       error
     );
 
@@ -1924,7 +1922,7 @@ async function changeStart() {
   if (!savedDate) {
 
     toast(
-      "Supabase не вернул дату старта"
+      "Supabase не вернул дату"
     );
 
     return;
@@ -1935,13 +1933,28 @@ async function changeStart() {
     только значением из Supabase.
   */
 
-  users[activeUserId]
-    .startDate =
-      savedDate;
+  user().goals = {
 
-  users[activeUserId]
-    .goals.start_date =
-      savedDate;
+    socials:
+      Array.isArray(data.socials)
+        ? data.socials
+        : [],
+
+    alcohol:
+      !!data.alcohol,
+
+    wishlist:
+      !!data.wishlist,
+
+    vision:
+      !!data.vision,
+
+    start_date:
+      savedDate
+  };
+
+  user().startDate =
+    savedDate;
 
   render();
 
@@ -1959,13 +1972,9 @@ async function changeStart() {
 async function saveWeight() {
 
   const weightInput =
-    document.getElementById(
-      "w"
-    );
+    document.getElementById("w");
 
-  if (!weightInput) {
-    return;
-  }
+  if (!weightInput) return;
 
   const v =
     parseFloat(
@@ -1974,9 +1983,7 @@ async function saveWeight() {
 
   if (!v) {
 
-    toast(
-      "Введи вес"
-    );
+    toast("Введи вес");
 
     return;
   }
@@ -2042,8 +2049,7 @@ async function saveWeight() {
   );
 
   const {
-    error:
-      measurementError
+    error: measurementError
   } = await sb
     .from("measurements")
     .insert({
@@ -2055,20 +2061,16 @@ async function saveWeight() {
         today(),
 
       chest:
-        vals.chest ??
-        null,
+        vals.chest ?? null,
 
       waist:
-        vals.waist ??
-        null,
+        vals.waist ?? null,
 
       belly:
-        vals.belly ??
-        null,
+        vals.belly ?? null,
 
       hips:
-        vals.hips ??
-        null
+        vals.hips ?? null
     });
 
   if (measurementError) {
@@ -2134,9 +2136,7 @@ function rewardKey(
   index
 ) {
 
-  return (
-    `${type}_${value}_${index}`
-  );
+  return `${type}_${value}_${index}`;
 }
 
 async function claim(id) {
@@ -2154,8 +2154,7 @@ async function claim(id) {
           id,
 
         claimed_at:
-          new Date()
-            .toISOString()
+          new Date().toISOString()
       },
       {
         onConflict:
@@ -2190,9 +2189,7 @@ async function claim(id) {
 
 function render() {
 
-  if (!user()) {
-    return;
-  }
+  if (!user()) return;
 
   const profileBtn =
     document.getElementById(
@@ -2228,16 +2225,14 @@ function render() {
   }
 
   document
-    .querySelectorAll(
-      ".nav-item"
-    )
+    .querySelectorAll(".nav-item")
     .forEach(
       button => {
 
         button.classList.toggle(
           "active",
           button.dataset.view ===
-            currentView
+          currentView
         );
       }
     );
@@ -2274,14 +2269,23 @@ function render() {
 
 function renderToday() {
 
+  /*
+    ТОЛЬКО activeUserId.
+  */
+
   const s =
-    statsFor(today());
+    statsFor(
+      today(),
+      activeUserId
+    );
 
   const u =
     user();
 
   const n =
-    dayNum(today());
+    dayNum(
+      today()
+    );
 
   document.getElementById(
     "view-today"
@@ -2294,22 +2298,15 @@ function renderToday() {
         <div>
 
           <div class="muted">
-
             ${new Date()
               .toLocaleDateString(
                 "ru-RU",
                 {
-                  weekday:
-                    "long",
-
-                  day:
-                    "numeric",
-
-                  month:
-                    "long"
+                  weekday: "long",
+                  day: "numeric",
+                  month: "long"
                 }
               )}
-
           </div>
 
           <div class="big-day">
@@ -2366,33 +2363,30 @@ function renderToday() {
       <div class="stats">
 
         <div class="stat">
-
           🔥 Серия
-
           <strong>
-            ${currentStreak()}
+            ${currentStreak(
+              activeUserId
+            )}
           </strong>
-
         </div>
 
         <div class="stat">
-
           📆 Дней
-
           <strong>
-            ${challengeDays()}
+            ${challengeDays(
+              activeUserId
+            )}
           </strong>
-
         </div>
 
         <div class="stat">
-
           🏆 Лучшая
-
           <strong>
-            ${bestStreak()}
+            ${bestStreak(
+              activeUserId
+            )}
           </strong>
-
         </div>
 
       </div>
@@ -2453,8 +2447,7 @@ function renderToday() {
           id="meal"
           placeholder="Что сегодня ела?"
         >${escapeHtml(
-          dayData(today())
-            .meal || ""
+          dayData(today()).meal || ""
         )}</textarea>
 
         <button
@@ -2477,8 +2470,7 @@ function renderToday() {
           id="note"
           placeholder="Как прошёл день?"
         >${escapeHtml(
-          u.notes[today()] ||
-          ""
+          u.notes[today()] || ""
         )}</textarea>
 
         <button
@@ -2552,15 +2544,12 @@ function habitHtml(
   if (h.id === "steps") {
 
     extra = `
-
       <input
         class="input"
         style="width:120px"
         type="number"
         placeholder="шаги"
-        value="${
-          d.steps || ""
-        }"
+        value="${d.steps || ""}"
         onchange="
           setExtra(
             '${date}',
@@ -2569,22 +2558,18 @@ function habitHtml(
           )
         "
       >
-
     `;
   }
 
   if (h.id === "book") {
 
     extra = `
-
       <input
         class="input"
         style="width:110px"
         type="number"
         placeholder="страниц"
-        value="${
-          d.pages || ""
-        }"
+        value="${d.pages || ""}"
         onchange="
           setExtra(
             '${date}',
@@ -2593,7 +2578,6 @@ function habitHtml(
           )
         "
       >
-
     `;
   }
 
@@ -2602,15 +2586,12 @@ function habitHtml(
   ) {
 
     extra = `
-
       <input
         class="input"
         style="width:110px"
         type="number"
         placeholder="минут"
-        value="${
-          d.minutes || ""
-        }"
+        value="${d.minutes || ""}"
         onchange="
           setExtra(
             '${date}',
@@ -2619,7 +2600,6 @@ function habitHtml(
           )
         "
       >
-
     `;
   }
 
@@ -2648,16 +2628,12 @@ function habitHtml(
       ">
 
         <div class="habit-title">
-
           ${h.icon}
           ${h.title}
-
         </div>
 
         <div class="habit-meta">
-
           ${h.meta}
-
         </div>
 
       </div>
@@ -2681,11 +2657,7 @@ function renderCalendar() {
     calCursor.getMonth();
 
   const first =
-    new Date(
-      y,
-      m,
-      1
-    );
+    new Date(y, m, 1);
 
   const days =
     new Date(
@@ -2695,9 +2667,7 @@ function renderCalendar() {
     ).getDate();
 
   const offset =
-    (
-      first.getDay() + 6
-    ) % 7;
+    (first.getDay() + 6) % 7;
 
   let cells = [
     "Пн",
@@ -2739,9 +2709,16 @@ function renderCalendar() {
         )
       );
 
+    /*
+      ТОЛЬКО текущий пользователь.
+    */
+
     const st =
       eligible(date)
-        ? statsFor(date)
+        ? statsFor(
+            date,
+            activeUserId
+          )
         : null;
 
     let cls =
@@ -2750,24 +2727,20 @@ function renderCalendar() {
     if (
       date === today()
     ) {
-
-      cls +=
-        " current";
+      cls += " current";
     }
 
     if (
       st?.pct === 100
     ) {
 
-      cls +=
-        " done";
+      cls += " done";
 
     } else if (
       st?.pct > 0
     ) {
 
-      cls +=
-        " partial";
+      cls += " partial";
     }
 
     cells += `
@@ -2812,9 +2785,7 @@ function renderCalendar() {
 
         <button
           class="btn secondary"
-          onclick="
-            moveMonth(-1)
-          "
+          onclick="moveMonth(-1)"
         >
           ‹
         </button>
@@ -2828,11 +2799,8 @@ function renderCalendar() {
           ).toLocaleDateString(
             "ru-RU",
             {
-              month:
-                "long",
-
-              year:
-                "numeric"
+              month: "long",
+              year: "numeric"
             }
           )}
 
@@ -2840,9 +2808,7 @@ function renderCalendar() {
 
         <button
           class="btn secondary"
-          onclick="
-            moveMonth(1)
-          "
+          onclick="moveMonth(1)"
         >
           ›
         </button>
@@ -2855,9 +2821,7 @@ function renderCalendar() {
 
       <p
         class="muted"
-        style="
-          margin-bottom:0
-        "
+        style="margin-bottom:0"
       >
         🟢 100% ·
         🟡 частично ·
@@ -2872,8 +2836,7 @@ function renderCalendar() {
 function moveMonth(x) {
 
   calCursor.setMonth(
-    calCursor.getMonth() +
-    x
+    calCursor.getMonth() + x
   );
 
   renderCalendar();
@@ -2881,8 +2844,15 @@ function moveMonth(x) {
 
 function openDay(date) {
 
+  /*
+    Только данные activeUserId.
+  */
+
   const st =
-    statsFor(date);
+    statsFor(
+      date,
+      activeUserId
+    );
 
   const d =
     dayData(date);
@@ -2891,8 +2861,11 @@ function openDay(date) {
 
     <h2>
       ${fmtDate(date)}
-      · День
-      ${dayNum(date)}
+      ${
+        dayNum(date) > 0
+          ? "· День " + dayNum(date)
+          : ""
+      }
     </h2>
 
     <div class="kpi">
@@ -2912,22 +2885,18 @@ function openDay(date) {
             <div class="habit">
 
               <span>
-
                 ${
                   d.checks[h.id]
                     ? "✅"
                     : "○"
                 }
-
               </span>
 
               <div>
-
                 <b>
                   ${h.icon}
                   ${h.title}
                 </b>
-
               </div>
 
             </div>
@@ -2956,14 +2925,24 @@ function openDay(date) {
 
 function renderProgress() {
 
+  /*
+    Только activeUserId.
+  */
+
   const o =
-    overall();
+    overall(
+      activeUserId
+    );
 
   const a =
-    initialWeight();
+    initialWeight(
+      activeUserId
+    );
 
   const b =
-    lastWeight();
+    lastWeight(
+      activeUserId
+    );
 
   const rates =
     defaultHabits
@@ -2972,7 +2951,8 @@ function renderProgress() {
 
           const rate =
             habitRate(
-              h.id
+              h.id,
+              activeUserId
             );
 
           return `
@@ -3023,12 +3003,10 @@ function renderProgress() {
         </div>
 
         <p>
-
           ${o.full}
           полностью выполненных
           дней из
           ${o.days}
-
         </p>
 
       </div>
@@ -3040,18 +3018,18 @@ function renderProgress() {
         </div>
 
         <div class="kpi">
-
           🔥
-          ${currentStreak()}
-
+          ${currentStreak(
+            activeUserId
+          )}
         </div>
 
         <p>
-
           Лучшая:
-          ${bestStreak()}
+          ${bestStreak(
+            activeUserId
+          )}
           дней
-
         </p>
 
       </div>
@@ -3128,9 +3106,7 @@ function renderProgress() {
 
       <button
         class="btn"
-        onclick="
-          weightModal()
-        "
+        onclick="weightModal()"
       >
         Добавить вес / замеры
       </button>
@@ -3145,21 +3121,19 @@ function renderProgress() {
 
       <div class="kpi">
 
-        ${beautyFund()
-          .toLocaleString(
-            "ru-RU"
-          )}
-
+        ${beautyFund(
+          activeUserId
+        ).toLocaleString(
+          "ru-RU"
+        )}
         сом
 
       </div>
 
       <p class="muted">
-
         +1 000 сом
         за каждый полный
         потерянный килограмм.
-
       </p>
 
     </div>
@@ -3224,9 +3198,7 @@ function weightModal() {
 
     <button
       class="btn"
-      onclick="
-        saveWeight()
-      "
+      onclick="saveWeight()"
     >
       Сохранить
     </button>
@@ -3240,66 +3212,54 @@ function weightModal() {
 
 function renderRewards() {
 
+  /*
+    Только награды текущего пользователя.
+  */
+
   const lost =
-    lostKg();
+    lostKg(
+      activeUserId
+    );
 
   const w =
-    lastWeight();
+    lastWeight(
+      activeUserId
+    );
 
   const st =
-    currentStreak();
+    currentStreak(
+      activeUserId
+    );
 
   let cards = [];
 
   const repeatDefs = [
 
     {
-      type:
-        "kg",
-
-      value:
-        5,
-
-      icon:
-        "💆",
-
+      type: "kg",
+      value: 5,
+      icon: "💆",
       title:
         "Стоматолог или косметолог",
-
       label:
         "за каждые −5 кг"
     },
 
     {
-      type:
-        "kg",
-
-      value:
-        10,
-
-      icon:
-        "🍕",
-
-      title:
-        "Читмил",
-
+      type: "kg",
+      value: 10,
+      icon: "🍕",
+      title: "Читмил",
       label:
         "за каждые −10 кг"
     },
 
     {
-      type:
-        "streak",
-
-      value:
-        30,
-
-      icon:
-        "🏊‍♀️",
-
+      type: "streak",
+      value: 30,
+      icon: "🏊‍♀️",
       title:
         "Бассейн / SPA",
-
       label:
         "за каждые 30 дней без срыва"
     }
@@ -3311,7 +3271,8 @@ function renderRewards() {
       const count =
         rewardCount(
           r.type,
-          r.value
+          r.value,
+          activeUserId
         );
 
       for (
@@ -3334,9 +3295,7 @@ function renderRewards() {
           );
 
         const claimed =
-          !!user().rewards[
-            key
-          ];
+          !!user().rewards[key];
 
         cards.push(`
 
@@ -3356,20 +3315,15 @@ function renderRewards() {
               ${r.icon}
             </div>
 
-            <div style="
-              flex:1
-            ">
+            <div style="flex:1">
 
               <h3>
-
                 ${r.title}
-
                 ${
                   i > 1
                     ? `№${i}`
                     : ""
                 }
-
               </h3>
 
               <div class="muted">
@@ -3428,54 +3382,31 @@ function renderRewards() {
 
   [
     {
-      id:
-        "75",
-
-      icon:
-        "💋",
-
-      title:
-        "Сделать губы",
-
-      rule:
-        "Достичь 75 кг",
-
-      value:
-        75
+      id: "75",
+      icon: "💋",
+      title: "Сделать губы",
+      rule: "Достичь 75 кг",
+      value: 75
     },
 
     {
-      id:
-        "65",
-
-      icon:
-        "📸",
-
+      id: "65",
+      icon: "📸",
       title:
         "Профессиональная фотосессия",
-
       rule:
         "Достичь 65 кг",
-
-      value:
-        65
+      value: 65
     },
 
     {
-      id:
-        "60",
-
-      icon:
-        "✈️🛍️",
-
+      id: "60",
+      icon: "✈️🛍️",
       title:
         "Путешествие + шопинг",
-
       rule:
         "Достичь 60 кг",
-
-      value:
-        60
+      value: 60
     }
   ].forEach(
     r => {
@@ -3485,9 +3416,7 @@ function renderRewards() {
         w <= r.value;
 
       const claimed =
-        !!user().rewards[
-          r.id
-        ];
+        !!user().rewards[r.id];
 
       cards.push(`
 
@@ -3507,9 +3436,7 @@ function renderRewards() {
             ${r.icon}
           </div>
 
-          <div style="
-            flex:1
-          ">
+          <div style="flex:1">
 
             <h3>
               ${r.title}
@@ -3568,10 +3495,11 @@ function renderRewards() {
 
       <div class="kpi">
 
-        ${beautyFund()
-          .toLocaleString(
-            "ru-RU"
-          )}
+        ${beautyFund(
+          activeUserId
+        ).toLocaleString(
+          "ru-RU"
+        )}
 
         сом
 
@@ -3606,378 +3534,373 @@ function renderRewards() {
 
 function renderUs() {
 
-  const old =
-    activeUserId;
+  /*
+    ВОТ ЗДЕСЬ специально показываются
+    данные ВСЕХ пользователей.
+
+    Это единственная общая страница.
+  */
 
   const cards =
     allUsers()
-      .map(
-        u => {
+      .map(u => {
 
-          const s =
-            statsFor(
-              today(),
-              u.id
-            );
+        const s =
+          statsFor(
+            today(),
+            u.id
+          );
 
-          const st =
-            currentStreak(
-              u.id
-            );
+        const st =
+          currentStreak(
+            u.id
+          );
 
-          const w =
-            lastWeight(
-              u.id
-            );
+        const w =
+          lastWeight(
+            u.id
+          );
 
-          const a =
-            initialWeight(
-              u.id
-            );
+        const a =
+          initialWeight(
+            u.id
+          );
 
-          const todayData =
-            u.days[today()]
-            || {
-              checks: {},
-              steps: "",
-              pages: "",
-              minutes: "",
-              meal: ""
-            };
+        const todayData =
+          u.days[today()]
+          || {
+            checks: {},
+            steps: "",
+            pages: "",
+            minutes: "",
+            meal: ""
+          };
 
-          const note =
-            u.notes[today()] ||
-            "";
+        const note =
+          u.notes[today()] ||
+          "";
 
-          const measures =
-            u.measurements.length
-              ? u.measurements[
-                  u.measurements.length -
-                  1
-                ]
-              : null;
+        const measures =
+          u.measurements.length
+            ? u.measurements[
+                u.measurements.length - 1
+              ]
+            : null;
 
-          const habits =
-            habitsForUser(
-              u.id,
-              today()
+        const habits =
+          habitsForUser(
+            u.id,
+            today()
+          )
+            .map(
+              h => `
+
+                <div
+                  class="habit"
+                  style="
+                    padding:8px 0
+                  "
+                >
+
+                  <span>
+
+                    ${
+                      todayData
+                        .checks?.[h.id]
+                        ? "✅"
+                        : "○"
+                    }
+
+                  </span>
+
+                  <div>
+
+                    <b>
+                      ${h.icon}
+                      ${h.title}
+                    </b>
+
+                  </div>
+
+                </div>
+              `
             )
-              .map(
-                h => `
+            .join("");
 
-                  <div
-                    class="habit"
-                    style="
-                      padding:8px 0
-                    "
-                  >
+        return `
 
-                    <span>
+          <div class="card">
 
-                      ${
-                        todayData
-                          .checks
-                          ?.[
-                            h.id
-                          ]
-                          ? "✅"
-                          : "○"
-                      }
+            <div class="row">
 
-                    </span>
+              <h2>
+                ${escapeHtml(
+                  u.name
+                )}
+              </h2>
 
-                    <div>
-
-                      <b>
-                        ${h.icon}
-                        ${h.title}
-                      </b>
-
-                    </div>
-
-                  </div>
-                `
-              )
-              .join("");
-
-          return `
-
-            <div class="card">
-
-              <div class="row">
-
-                <h2>
-                  ${escapeHtml(
-                    u.name
-                  )}
-                </h2>
-
-                <span class="tag">
-
-                  ${
-                    u.id === old
-                      ? "Ты"
-                      : "Общий доступ"
-                  }
-
-                </span>
-
-              </div>
-
-              <div class="stats">
-
-                <div class="stat">
-
-                  Сегодня
-
-                  <strong>
-                    ${s.done}/${s.total}
-                  </strong>
-
-                </div>
-
-                <div class="stat">
-
-                  Процент
-
-                  <strong>
-                    ${s.pct}%
-                  </strong>
-
-                </div>
-
-                <div class="stat">
-
-                  Серия
-
-                  <strong>
-                    🔥 ${st}
-                  </strong>
-
-                </div>
-
-              </div>
-
-              <div
-                class="grid"
-                style="
-                  margin-top:12px
-                "
-              >
-
-                <div class="stat">
-
-                  <div class="muted">
-                    ⚖️ Вес
-                  </div>
-
-                  <strong>
-
-                    ${
-                      w != null
-                        ? w + " кг"
-                        : "—"
-                    }
-
-                  </strong>
-
-                  <small>
-
-                    ${
-                      a != null
-                        ? `старт ${a} кг`
-                        : "нет данных"
-                    }
-
-                  </small>
-
-                </div>
-
-                <div class="stat">
-
-                  <div class="muted">
-                    💄 Фонд
-                  </div>
-
-                  <strong>
-
-                    ${beautyFund(
-                      u.id
-                    ).toLocaleString(
-                      "ru-RU"
-                    )}
-
-                    сом
-
-                  </strong>
-
-                </div>
-
-              </div>
-
-              <details
-                style="
-                  margin-top:14px
-                "
-              >
-
-                <summary>
-                  <b>
-                    📋 Привычки сегодня
-                  </b>
-                </summary>
-
-                ${habits}
-
-                ${
-                  todayData.steps
-                    ? `
-                      <p class="muted">
-
-                        👣 Шаги:
-                        ${todayData.steps}
-
-                      </p>
-                    `
-                    : ""
-                }
-
-                ${
-                  todayData.pages
-                    ? `
-                      <p class="muted">
-
-                        📖 Страниц:
-                        ${todayData.pages}
-
-                      </p>
-                    `
-                    : ""
-                }
-
-                ${
-                  todayData.minutes
-                    ? `
-                      <p class="muted">
-
-                        🎬 Развлекательный
-                        контент:
-                        ${todayData.minutes}
-                        мин
-
-                      </p>
-                    `
-                    : ""
-                }
-
-              </details>
-
-              <details
-                style="
-                  margin-top:12px
-                "
-              >
-
-                <summary>
-                  <b>
-                    🍽️ Питание
-                  </b>
-                </summary>
-
-                <p>
-
-                  ${escapeHtml(
-                    todayData.meal ||
-                    "Сегодня ничего не записано."
-                  )}
-
-                </p>
-
-              </details>
-
-              <details
-                style="
-                  margin-top:12px
-                "
-              >
-
-                <summary>
-                  <b>
-                    📝 Заметка за сегодня
-                  </b>
-                </summary>
-
-                <p>
-
-                  ${escapeHtml(
-                    note ||
-                    "Сегодня заметки нет."
-                  )}
-
-                </p>
-
-              </details>
-
-              <details
-                style="
-                  margin-top:12px
-                "
-              >
-
-                <summary>
-                  <b>
-                    📏 Последние замеры
-                  </b>
-                </summary>
-
-                ${
-                  measures
-
-                    ? `
-                      <p>
-
-                        Грудь:
-                        ${
-                          measures.chest ??
-                          "—"
-                        } см ·
-
-                        Талия:
-                        ${
-                          measures.waist ??
-                          "—"
-                        } см ·
-
-                        Живот:
-                        ${
-                          measures.belly ??
-                          "—"
-                        } см ·
-
-                        Бёдра:
-                        ${
-                          measures.hips ??
-                          "—"
-                        } см
-
-                      </p>
-                    `
-
-                    : `
-                      <p>
-                        Замеры пока
-                        не внесены.
-                      </p>
-                    `
-                }
-
-              </details>
+              <span class="tag">
+                Общий доступ
+              </span>
 
             </div>
-          `;
-        }
-      )
+
+            <div class="stats">
+
+              <div class="stat">
+
+                Сегодня
+
+                <strong>
+                  ${s.done}/${s.total}
+                </strong>
+
+              </div>
+
+              <div class="stat">
+
+                Процент
+
+                <strong>
+                  ${s.pct}%
+                </strong>
+
+              </div>
+
+              <div class="stat">
+
+                Серия
+
+                <strong>
+                  🔥 ${st}
+                </strong>
+
+              </div>
+
+            </div>
+
+            <div
+              class="grid"
+              style="margin-top:12px"
+            >
+
+              <div class="stat">
+
+                <div class="muted">
+                  ⚖️ Вес
+                </div>
+
+                <strong>
+
+                  ${
+                    w != null
+                      ? w + " кг"
+                      : "—"
+                  }
+
+                </strong>
+
+                <small>
+
+                  ${
+                    a != null
+                      ? `старт ${a} кг`
+                      : "нет данных"
+                  }
+
+                </small>
+
+              </div>
+
+              <div class="stat">
+
+                <div class="muted">
+                  💄 Фонд
+                </div>
+
+                <strong>
+
+                  ${beautyFund(
+                    u.id
+                  ).toLocaleString(
+                    "ru-RU"
+                  )}
+
+                  сом
+
+                </strong>
+
+              </div>
+
+            </div>
+
+            <details
+              style="
+                margin-top:14px
+              "
+            >
+
+              <summary>
+                <b>
+                  📋 Привычки сегодня
+                </b>
+              </summary>
+
+              ${habits}
+
+              ${
+                todayData.steps
+                  ? `
+                    <p class="muted">
+
+                      👣 Шаги:
+                      ${todayData.steps}
+
+                    </p>
+                  `
+                  : ""
+              }
+
+              ${
+                todayData.pages
+                  ? `
+                    <p class="muted">
+
+                      📖 Страниц:
+                      ${todayData.pages}
+
+                    </p>
+                  `
+                  : ""
+              }
+
+              ${
+                todayData.minutes
+                  ? `
+                    <p class="muted">
+
+                      🎬 Развлекательный
+                      контент:
+                      ${todayData.minutes}
+                      мин
+
+                    </p>
+                  `
+                  : ""
+              }
+
+            </details>
+
+            <details
+              style="
+                margin-top:12px
+              "
+            >
+
+              <summary>
+                <b>
+                  🍽️ Питание
+                </b>
+              </summary>
+
+              <p>
+
+                ${escapeHtml(
+                  todayData.meal ||
+                  "Сегодня ничего не записано."
+                )}
+
+              </p>
+
+            </details>
+
+            <details
+              style="
+                margin-top:12px
+              "
+            >
+
+              <summary>
+                <b>
+                  📝 Заметка за сегодня
+                </b>
+              </summary>
+
+              <p>
+
+                ${escapeHtml(
+                  note ||
+                  "Сегодня заметки нет."
+                )}
+
+              </p>
+
+            </details>
+
+            <details
+              style="
+                margin-top:12px
+              "
+            >
+
+              <summary>
+                <b>
+                  📏 Последние замеры
+                </b>
+              </summary>
+
+              ${
+                measures
+
+                  ? `
+                    <p>
+
+                      Грудь:
+                      ${
+                        measures.chest ??
+                        "—"
+                      } см ·
+
+                      Талия:
+                      ${
+                        measures.waist ??
+                        "—"
+                      } см ·
+
+                      Живот:
+                      ${
+                        measures.belly ??
+                        "—"
+                      } см ·
+
+                      Бёдра:
+                      ${
+                        measures.hips ??
+                        "—"
+                      } см
+
+                    </p>
+                  `
+
+                  : `
+                    <p>
+                      Замеры пока
+                      не внесены.
+                    </p>
+                  `
+              }
+
+            </details>
+
+          </div>
+        `;
+      })
       .join("");
+
+  /*
+    Цели показываем для текущего пользователя,
+    потому что это его личные цели.
+  */
 
   const currentGoals =
     user().goals;
@@ -4009,7 +3932,7 @@ function renderUs() {
     <div class="card">
 
       <h2>
-        🎯 Цели
+        🎯 Мои цели
       </h2>
 
       <div class="field">
@@ -4141,6 +4064,45 @@ function renderUs() {
 
       </label>
 
+      <div
+        class="field"
+        style="margin-top:18px"
+      >
+
+        <label>
+          📅 Дата старта челленджа
+        </label>
+
+        <input
+          class="input"
+          id="startDate"
+          type="date"
+          value="${
+            currentGoals.start_date || ""
+          }"
+        >
+
+        <button
+          class="btn secondary"
+          style="margin-top:9px"
+          onclick="changeStart()"
+        >
+          Сохранить дату старта
+        </button>
+
+        <p class="muted">
+
+          Текущая дата:
+          ${
+            fmtDate(
+              currentGoals.start_date
+            )
+          }
+
+        </p>
+
+      </div>
+
     </div>
   `;
 }
@@ -4200,12 +4162,8 @@ function openProfile() {
 
     <button
       class="btn secondary"
-      style="
-        width:100%
-      "
-      onclick="
-        logout()
-      "
+      style="width:100%"
+      onclick="logout()"
     >
       Выйти
     </button>
@@ -4219,19 +4177,22 @@ function switchUser(id) {
     return;
   }
 
+  /*
+    При переключении пользователя
+    дата берётся из goals,
+    потому что users.startDate
+    уже был загружен из goals.start_date.
+  */
+
   activeUserId =
     id;
 
-  /*
-    ВАЖНО:
-
-    При переключении пользователя
-    ничего не вычисляем и ничего
-    не подставляем.
-
-    startDate уже был загружен
-    из goals.start_date.
-  */
+  users[id].startDate =
+    normalizeStartDate(
+      users[id]
+        ?.goals
+        ?.start_date
+    );
 
   closeModal();
 
@@ -4254,10 +4215,7 @@ function openModal(html) {
       "modal"
     );
 
-  if (
-    !content ||
-    !modal
-  ) {
+  if (!content || !modal) {
     return;
   }
 
@@ -4327,19 +4285,17 @@ function setupEvents() {
     .querySelectorAll(
       ".nav-item"
     )
-    .forEach(
-      button => {
+    .forEach(button => {
 
-        button.onclick =
-          () => {
+      button.onclick =
+        () => {
 
-            currentView =
-              button.dataset.view;
+          currentView =
+            button.dataset.view;
 
-            render();
-          };
-      }
-    );
+          render();
+        };
+    });
 
   const profileBtn =
     document.getElementById(
